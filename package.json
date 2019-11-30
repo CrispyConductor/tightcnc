@@ -1,0 +1,12 @@
+{
+  "name": "simple-cnc",
+  "version": "0.0.1",
+  "description": "Simple backend-centric server for hobby cnc controllers",
+  "dependencies": {
+    "pasync": "^1.5.0",
+    "serialport": "^8.0.5",
+    "xerror": "^1.1.3"
+  },
+  "devDependencies": {},
+  "license": "Apache-2.0"
+}
