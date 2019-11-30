@@ -5,7 +5,7 @@ const pasync = require('pasync');
 
 class TinyGController extends Controller {
 
-	constructor(config) {
+	constructor(config = {}) {
 		super(config);
 		this.serial = null; // Instance of SerialPort stream interface class
 		this.sendQueue = []; // Queue of data lines to send
@@ -14,7 +14,7 @@ class TinyGController extends Controller {
 		this.responseWaiters = []; // pasync waiters for lines currently "in flight" (sent and waiting for response)
 	}
 
-	init() {
+	initConnection() {
 		return new Promise((resolve, reject) => {
 			// Set up options for serial connection.  (Set defaults, then apply configs on top.)
 			let serialOptions = {

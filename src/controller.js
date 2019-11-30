@@ -12,6 +12,7 @@ class Controller extends EventEmitter {
 	 * @param {Object} config - Controller-specific configuration blob
 	 */
 	constructor(config) {
+		super();
 		// Configuration for the controller.  The format of this is entirely dependent on the subclass.
 		this.config = config;
 		// See resetState() for property definitions.
@@ -67,10 +68,10 @@ class Controller extends EventEmitter {
 	/**
 	 * Initialize and connect to CNC machine.  Should update machine state properties as much as is possible.
 	 *
-	 * @method init
+	 * @method initConnection
 	 * @return {Promise}
 	 */
-	init() {}
+	initConnection() {}
 
 	/**
 	 * Sends a (gcode) line to the controller.  Should parse the line to update machine state if necessary.
