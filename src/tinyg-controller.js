@@ -274,20 +274,26 @@ class TinyGController extends Controller {
 		// Fetch new status report to ensure up-to-date info (mostly in case a move was just requested and we haven't gotten an update from that yet)
 		await this.sendWait({ sr: null });
 		// If the planner queue is empty, and we're not currently moving, then should be good
-		if (!this.moving && this.plannerQueueFree === this.plannerQueueSize) return Promise.resolve();
+		if (!this.moving && this.plannerQueueFree === this.plannerQueueSize && !this.sendQueue.length && !this.responseWaiters.length) return Promise.resolve();
 		// Otherwise, register a listener for status changes, and resolve when these conditions are met
 		await new Promise((resolve, reject) => {
 			if (this.error) return reject(new XError(XError.MACHINE_ERROR, 'Machine error code: ' + this.errorData));
 			const statusHandler = () => {
 				if (this.error) {
 					this.removeListener('statusUpdate', statusHandler);
+					this.removeListener('sent', statusHandler);
+					this.removeListener('afterReceived', statusHandler);
 					reject(new XError(XError.MACHINE_ERROR, 'Machine error code: ' + this.errorData));
-				} else if (!this.moving && this.plannerQueueFree === this.plannerQueueSize) {
+				} else if (!this.moving && this.plannerQueueFree === this.plannerQueueSize && !this.sendQueue.length && !this.responseWaiters.length) {
 					this.removeListener('statusUpdate', statusHandler);
+					this.removeListener('sent', statusHandler);
+					this.removeListener('afterReceived', statusHandler);
 					resolve();
 				}
 			};
-			this.on('statusUpdate', statusHandler);
+			this.on('statusUpdate', statusHandler); // main listener we're interested in
+			this.on('sent', statusHandler); // these two are for edge cases (things that change sendQueue or responseWaiters without statusUpdate)
+			this.on('afterReceived', statusHandler);
 		});
 	}
 
@@ -340,6 +346,7 @@ class TinyGController extends Controller {
 		} else {
 			this._updateStatusReport(statusVars);
 		}
+		this.emit('afterReceived', line);
 	}
 
 	// Update stored state information with the given status report information
@@ -569,6 +576,61 @@ class TinyGController extends Controller {
 				}
 			}
 		});
+	}
+
+	sendStream(stream) {
+		let waiter = pasync.waiter();
+
+		let dataBuf = '';
+		// Bounds within which to stop and start reading from the stream
+		let sendQueueHighWater = this.config.streamSendQueueHighWaterMark || 50;
+		let sendQueueLowWater = this.config.streamSendQueueLowWaterMark || 10;
+		let streamPaused = false;
+
+		const sendLines = (lines) => {
+			for (let line of lines) {
+				line = line.trim();
+				if (line) this.send(line);
+			}
+		};
+
+		const sentListener = () => {
+			// Check if paused stream can be resumed
+			if (streamPaused && this.sendQueue.length <= sendQueueLowWater) {
+				stream.resume();
+				streamPaused = false;
+			}
+		};
+
+		this.on('sent', sentListener);
+
+		stream.on('data', (chunk) => {
+			if (typeof chunk !== 'string') chunk = chunk.toString('utf8');
+			dataBuf += chunk;
+			let lines = dataBuf.split(/\r?\n/);
+			if (lines[lines.length - 1] !== '') {
+				// does not end in newline, so the last component goes back in the buf
+				dataBuf = lines.pop();
+			} else {
+				lines.pop();
+				dataBuf = '';
+			}
+			sendLines(lines);
+			// if send queue is too full, pause the stream
+			if (this.sendQueue.length >= sendQueueHighWater) {
+				stream.pause();
+				streamPaused = true;
+			}
+		});
+
+		stream.on('end', () => {
+			sendLines(dataBuf.split(/\r?\m/));
+			this.removeListener('sent', sentListener);
+			this.waitSync()
+				.then(() => waiter.resolve(), (err) => waiter.reject(err));
+		});
+
+		return waiter.promise;
 	}
 
 };

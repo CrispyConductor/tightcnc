@@ -1,5 +1,6 @@
 const EventEmitter = require('events');
 const XError = require('xerror');
+const fs = require('fs');
 
 class Controller extends EventEmitter {
 
@@ -99,14 +100,16 @@ class Controller extends EventEmitter {
 	sendWait(line) {}
 
 	/**
-	 * Streams a file to the controller, as in send().  Should only resolve once whole file has been executed.
+	 * Streams a file or other string to the controller, as in send().  Should only resolve once whole stream has been executed.
 	 *
-	 * @method sendFile
-	 * @param {String} filename - Filename to send.
-	 * @return {Promise} - Resolves when whole file has been sent, and movements processed.
+	 * @method sendStream
+	 * @param {ReadableString} stream - Readable character stream
+	 * @return {Promise} - Resolves when whole stream has been sent, and movements processed.
 	 */
-	sendFile(filename) { // or send stream?
-		// TODO
+	sendStream(stream) {}
+
+	sendFile(filename) {
+		return this.sendStream(fs.createReadStream(filename));
 	}
 
 	/**
@@ -192,8 +195,6 @@ class Controller extends EventEmitter {
 	 */
 	probe(pos, feed = null) {}
 
-	_updateStateFromGcode(line) {
-	}
 
 }
 
