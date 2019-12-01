@@ -7,6 +7,10 @@ class Controller extends EventEmitter {
 	 * Base class for CNC controllers.  Each subclass corresponds to a type of CNC controller and manages the connection
 	 * to that controller.
 	 *
+	 * Events that should be emitted:
+	 *   - statusUpdate - When the status variables are updated.  No parameters.
+	 *   - ready - When the connection is ready for use.
+	 *
 	 * @class Controller
 	 * @constructor
 	 * @param {Object} config - Controller-specific configuration blob
@@ -31,7 +35,7 @@ class Controller extends EventEmitter {
 		this.axisLabels = [ 'x', 'y', 'z' ];
 		// Current coordinates in machine position for each of the axes
 		this.mpos = [ 0, 0, 0 ];
-		// Currently active coordinate system.  0 corresponds to G54, 1 to G55, etc.
+		// Currently active coordinate system.  0 corresponds to G54, 1 to G55, etc.  null means G53 machine coordinates.
 		this.activeCoordSys = 0;
 		// For each coordinate system, the offsets for that system to the machine coordinates
 		this.coordSysOffsets = [ [ 0, 0, 0 ] ];
@@ -40,7 +44,7 @@ class Controller extends EventEmitter {
 		// Whether the current G92 offset is enabled
 		this.offsetEnabled = false;
 		// Stored machine positions; 0 corresponds to G28, 1 corresponds to G30
-		this.storedPositions = [ [ 0, 0, 0 ] ];
+		this.storedPositions = [ [ 0, 0, 0 ], [ 0, 0, 0 ] ];
 		// Whether machine is homed, for each axis
 		this.homed = [ false, false, false ];
 		// If the machine is currently paused / feed hold
@@ -51,8 +55,6 @@ class Controller extends EventEmitter {
 		this.feed = 0;
 		// Whether machine is currently in incremental mode
 		this.incremental = false;
-		// If a program is currently running
-		this.programRunning = false;
 		// If the machine is currently moving
 		this.moving = false;
 		// If coolant is running.  Can also be 1 or 2 for mist or flood coolant
@@ -61,8 +63,11 @@ class Controller extends EventEmitter {
 		this.spindle = false;
 		// Last line number executed
 		this.line = 0;
-		// null if there's no machine error, or some value describing the error state
-		this.error = null;
+		// true if the machine is in an error state
+		this.error = false;
+		this.errorData = null;
+		// true if a program is running
+		this.programRunning = false;
 	}
 
 	/**
@@ -98,9 +103,21 @@ class Controller extends EventEmitter {
 	 * @param {String} filename - Filename to send.
 	 * @return {Promise} - Resolves when whole file has been sent, and movements processed.
 	 */
-	sendFile(filename) {
+	sendFile(filename) { // or send stream?
 		// TODO
 	}
+
+	/**
+	 * Returns a promise that resolves when the machine state properties on this class have been fully synchronized with
+	 * the machine.  Generally this means that all movement has stopped, all sent lines have been processed, and there's nothing
+	 * left in the queue.  Calling this function may temporarily pause the send queue.  After the returned promise resolves,
+	 * the state variables are only guaranteed to be in sync until the next send queue entry is sent (which might be right away).
+	 * To guarantee proper operation, no other commands should be sent until after this function resolves.
+	 *
+	 * @method waitSync
+	 * @return {Promise}
+	 */
+	waitSync() {}
 
 	/**
 	 * Pauses machine / feed hold.
@@ -179,11 +196,13 @@ class Controller extends EventEmitter {
 }
 
 // Error code for serial port communication errors
-XError.registerErrorCode('comm_error', { 'message': 'Error communicating with controller.' });
+XError.registerErrorCode('comm_error', { message: 'Error communicating with controller.' });
 // Error code when probe doesn't trip
-XError.registerErrorCode('probe_end', { 'message': 'Probe reached end position without tripping.' });
+XError.registerErrorCode('probe_end', { message: 'Probe reached end position without tripping.' });
 // Error code when failing to parse serial message
-XError.registerErrorCode('parse_error', { 'message': 'Error parsing' });
+XError.registerErrorCode('parse_error', { message: 'Error parsing' });
+// Error code for generic error report from the machine
+XError.registerErrorCode('machine_error', { message: 'Machine error' });
 
 module.exports = Controller;
 
