@@ -19,9 +19,10 @@ class TinyGController extends Controller {
 
 	constructor(config = {}) {
 		// Configuration for sending data that could potentially overflow the serial buffer to improve speed, but could impact responsiveness.
-		if (config.oversend === undefined) config.oversend = true; // whether to enable oversending
+		// EXPERIMENTAL
+		if (config.oversend === undefined) config.oversend = false; // whether to enable oversending
 		if (config.oversendLimit === undefined) config.oversendLimit = 20; // max number to send without receiving responses over the standard threshold
-		if (config.oversendPlannerMinAvailable === undefined) config.oversendPlannerMinAvailable = 10; // minimum number of spots to leave open in planner queue when oversending
+		if (config.oversendPlannerMinAvailable === undefined) config.oversendPlannerMinAvailable = 12; // minimum number of spots to leave open in planner queue when oversending
 
 		super(config);
 		this.serial = null; // Instance of SerialPort stream interface class
@@ -121,7 +122,7 @@ class TinyGController extends Controller {
 		if (typeof line !== 'string') line = JSON.stringify(line);
 		line = line.trim();
 		// Check if should decrement linesToSend (if not !, %, etc)
-		if (line === '!' || line === '%' || line === '~') {
+		if (line === '!' || line === '%' || line === '~' || line === '\x18') {
 			this.serial.write(line);
 			if (responseWaiter) responseWaiter.reject(new XError(XError.INVALID_ARGUMENT, 'Cannot wait for response on control character'));
 		} else {
@@ -293,22 +294,35 @@ class TinyGController extends Controller {
 		// Otherwise, register a listener for status changes, and resolve when these conditions are met
 		await new Promise((resolve, reject) => {
 			if (this.error) return reject(new XError(XError.MACHINE_ERROR, 'Machine error code: ' + this.errorData));
+			let removeListeners;
+			this._waitingForSync = true;
 			const statusHandler = () => {
 				if (this.error) {
-					this.removeListener('statusUpdate', statusHandler);
-					this.removeListener('sent', statusHandler);
-					this.removeListener('afterReceived', statusHandler);
+					this._waitingForSync = false;
+					removeListeners();
 					reject(new XError(XError.MACHINE_ERROR, 'Machine error code: ' + this.errorData));
 				} else if (!this.moving && this.plannerQueueFree === this.plannerQueueSize && !this.sendQueue.length && !this.responseWaiters.length) {
-					this.removeListener('statusUpdate', statusHandler);
-					this.removeListener('sent', statusHandler);
-					this.removeListener('afterReceived', statusHandler);
+					this._waitingForSync = false;
+					removeListeners();
 					resolve();
+					this._doSend();
 				}
+			};
+			const cancelRunningOpsHandler = (err) => {
+				this._waitingForSync = false;
+				removeListeners();
+				reject(err);
+			};
+			removeListeners = () -> {
+				this.removeListener('statusUpdate', statusHandler);
+				this.removeListener('sent', statusHandler);
+				this.removeListener('afterReceived', statusHandler);
+				this.removeListener('cancelRunningOps', cancelRunningOpsHandler);
 			};
 			this.on('statusUpdate', statusHandler); // main listener we're interested in
 			this.on('sent', statusHandler); // these two are for edge cases (things that change sendQueue or responseWaiters without statusUpdate)
 			this.on('afterReceived', statusHandler);
+			this.on('cancelRunningOps', cancelRunningOpsHandler);
 		});
 	}
 
@@ -316,6 +330,22 @@ class TinyGController extends Controller {
 		this.emit('received', line);
 		if (line[0] != '{') throw new XError(XError.PARSE_ERROR, 'Errror parsing received serial line', { data: line });
 		let data = JSON.parse(line);
+
+		// Check if this is a SYSTEM READY response indicating a reset
+		if ('r' in data && data.r.msg === 'SYSTEM READY') {
+			this._cancelRunningOps(new XError(XError.CANCELLED, 'Machine reset'));
+			this.ready = false;
+			this._resetSerialState();
+			this._initMachine()
+				.then(() => {
+					this.ready = true;
+					this.emit('ready');
+					this.emit('statusUpdate');
+				})
+				.catch((err) => this.emit('error', err));
+			return;
+		}
+
 		let statusVars = {}; // updated status vars
 		if ('sr' in data) {
 			// Update the current status variables
@@ -483,7 +513,7 @@ class TinyGController extends Controller {
 	// Fetch and update current status from machine, if vars is null, update all
 	_fetchStatus(vars = null, emitEvent = true) {
 		if (!vars) {
-			vars = [ 'coor', 'stat', 'unit', 'feed', 'dist', 'n' ];
+			vars = [ 'coor', 'stat', 'unit', 'feed', 'dist', 'n', 'qr' ];
 			for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) {
 				let axis = this.axisLabels[axisNum];
 				vars.push('mpo' + axis, 'g92' + axis, 'g28' + axis, 'g30' + axis, 'hom' + axis);
@@ -539,6 +569,15 @@ class TinyGController extends Controller {
 		this.plannerQueueSize = this.plannerQueueFree;
 	}
 
+	_resetSerialState() {
+		this.sendQueue = [];
+		this.responseWaiterQueue = [];
+		this.responseWaiters = [];
+		this.linesToSend = 4;
+		this._waitingForSync = false;
+		this.currentStatusReport = {};
+	}
+
 	_setupSerial() {
 		const handlePortClosed = () => {
 			this.ready = false;
@@ -562,24 +601,19 @@ class TinyGController extends Controller {
 			handlePortClosed();
 		});
 
-		let receiveBuf = '';
-		this.sendQueue = [];
-		this.responseWaiterQueue = [];
-		this.responseWaiters = [];
-		this.linesToSend = 4;
-		this._waitingForSync = false;
-		this.currentStatusReport = {};
+		this.serialReceiveBuf = '';
+		this._resetSerialState();
 
 		this.serial.on('data', (buf) => {
-			let str = receiveBuf + buf.toString('utf8');
+			let str = this.serialReceiveBuf + buf.toString('utf8');
 			let strlines = str.split(/[\r\n]+/);
 			if (!strlines[strlines.length-1].trim()) {
 				// Received data ended in a newline, so don't need to buffer anything
 				strlines.pop();
-				receiveBuf = '';
+				this.serialReceiveBuf = '';
 			} else {
 				// Last line did not end in a newline, so add to buffer
-				receiveBuf = strlines.pop();
+				this.serialReceiveBuf = strlines.pop();
 			}
 			// Process each received line
 			for (let line of strlines) {
@@ -603,6 +637,7 @@ class TinyGController extends Controller {
 		let sendQueueHighWater = this.config.streamSendQueueHighWaterMark || 50;
 		let sendQueueLowWater = this.config.streamSendQueueLowWaterMark || 10;
 		let streamPaused = false;
+		let canceled = false;
 
 		const sendLines = (lines) => {
 			for (let line of lines) {
@@ -619,9 +654,17 @@ class TinyGController extends Controller {
 			}
 		};
 
+		const cancelHandler = (err) => {
+			this.removeListener('sent', sentListener);
+			this.removeListener('cancelRunningOps', cancelHandler);
+			canceled = true;
+			stream.emit('error', err);
+		};
+
 		this.on('sent', sentListener);
 
 		stream.on('data', (chunk) => {
+			if (canceled) return;
 			if (typeof chunk !== 'string') chunk = chunk.toString('utf8');
 			dataBuf += chunk;
 			let lines = dataBuf.split(/\r?\n/);
@@ -641,13 +684,47 @@ class TinyGController extends Controller {
 		});
 
 		stream.on('end', () => {
+			if (canceled) return;
 			sendLines(dataBuf.split(/\r?\m/));
 			this.removeListener('sent', sentListener);
+			this.removeListener('cancelRunningOps', cancelHandler);
 			this.waitSync()
 				.then(() => waiter.resolve(), (err) => waiter.reject(err));
 		});
 
+		this.on('cancelRunningOps', cancelHandler);
+
 		return waiter.promise;
+	}
+
+	_cancelRunningOps(err) {
+		for (let p in this.responseWaiterQueue) p.reject(err);
+		for (let p in this.responseWaiters) p.reject(err);
+		this.emit('cancelRunningOps', err);
+		this.sendQueue = [];
+		this.responseWaiterQueue = [];
+		this.responseWaiters = [];
+	}
+
+	hold() {
+		this._sendImmediate('!');
+		this.paused = true;
+	}
+
+	resume() {
+		this._sendImmediate('~');
+		this.paused = false;
+	}
+
+	cancel() {
+		this._cancelRunningOps(new XError(XError.CANCELLED, 'Operation cancelled'));
+		this._sendImmediate('%');
+	}
+
+	reset() {
+		this._cancelRunningOps(new XError(XError.CANCELLED, 'Machine reset'));
+		this._sendImmediate('\x18');
+		this.ready = false; // will be set back to true once SYSTEM READY message received
 	}
 
 };

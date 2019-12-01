@@ -143,9 +143,7 @@ class Controller extends EventEmitter {
 	 *
 	 * @method cancel
 	 */
-	cancel() {
-		// TODO: handle cancelling sendFile, other stuff?
-	}
+	cancel() {}
 
 	/**
 	 * Resets machine.
@@ -206,6 +204,7 @@ XError.registerErrorCode('probe_end', { message: 'Probe reached end position wit
 XError.registerErrorCode('parse_error', { message: 'Error parsing' });
 // Error code for generic error report from the machine
 XError.registerErrorCode('machine_error', { message: 'Machine error' });
+XError.registerErrorCode('cancelled', { message: 'Cancelled' });
 
 module.exports = Controller;
 
