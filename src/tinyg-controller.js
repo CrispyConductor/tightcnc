@@ -258,7 +258,7 @@ class TinyGController extends Controller {
 				this.emit('statusUpdate');
 			};
 		}
-		if (wordmap.M === 7 || wordmap.M === 8 || wordmao.M === 9) {
+		if (wordmap.M === 7 || wordmap.M === 8 || wordmap.M === 9) {
 			fn = () => {
 				if (wordmap.M === 7) this.coolant = 1;
 				else if (wordmap.M === 8) this.coolant = 2;
@@ -517,7 +517,16 @@ class TinyGController extends Controller {
 
 	_setupSerial() {
 		const handlePortClosed = () => {
-			// TODO: Retry opening it
+			this.ready = false;
+			const tryReopen = () => {
+				setTimeout(() => {
+					this.initConnection()
+						.catch(() => {
+							tryReopen();
+						});
+				}, 1000);
+			};
+			tryReopen();
 		};
 
 		this.serial.on('error', (err) => {
