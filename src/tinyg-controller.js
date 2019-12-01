@@ -18,6 +18,11 @@ function gparse(line) {
 class TinyGController extends Controller {
 
 	constructor(config = {}) {
+		// Configuration for sending data that could potentially overflow the serial buffer to improve speed, but could impact responsiveness.
+		if (config.oversend === undefined) config.oversend = true; // whether to enable oversending
+		if (config.oversendLimit === undefined) config.oversendLimit = 20; // max number to send without receiving responses over the standard threshold
+		if (config.oversendPlannerMinAvailable === undefined) config.oversendPlannerMinAvailable = 10; // minimum number of spots to leave open in planner queue when oversending
+
 		super(config);
 		this.serial = null; // Instance of SerialPort stream interface class
 		this.sendQueue = []; // Queue of data lines to send
@@ -87,8 +92,18 @@ class TinyGController extends Controller {
 	// Send as many lines as we can from the send queue
 	_doSend() {
 		if (this._waitingForSync) return; // don't send anything more until state has synchronized
-		while (this.linesToSend >= 1 && this.sendQueue.length >= 1) {
+		let curLinesToSend = this.linesToSend;
+		if (this.config.oversend && this.plannerQueueSize) {
+			let plannerNumToSend = this.plannerQueueFree - this.oversendPlannerMinAvailable;
+			if (plannerNumToSend > curLinesToSend) {
+				let curMaxOversend =  this.oversendLimit + curLinesToSend;
+				if (plannerNumToSend > curMaxOversend) plannerNumToSend = curMaxOversend;
+				if (plannerNumToSend > curLinesToSend) curLinesToSend = plannerNumToSend;
+			}
+		}
+		while (curLinesToSend >= 1 && this.sendQueue.length >= 1) {
 			this._sendImmediate(this.sendQueue.shift(), this.responseWaiterQueue.shift());
+			curLinesToSend--;
 		}
 	}
 
@@ -468,7 +483,7 @@ class TinyGController extends Controller {
 	// Fetch and update current status from machine, if vars is null, update all
 	_fetchStatus(vars = null, emitEvent = true) {
 		if (!vars) {
-			vars = [ 'coor', 'stat', 'unit', 'feed', 'dist', 'n', 'qr' ];
+			vars = [ 'coor', 'stat', 'unit', 'feed', 'dist', 'n' ];
 			for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) {
 				let axis = this.axisLabels[axisNum];
 				vars.push('mpo' + axis, 'g92' + axis, 'g28' + axis, 'g30' + axis, 'hom' + axis);
@@ -507,11 +522,13 @@ class TinyGController extends Controller {
 		await this.sendWait({ jv: 4 });
 		// Enable (filtered) automatic status reports
 		await this.sendWait({ sv: 1});
+		// Enable queue reports
+		await this.sendWait({ qv: 1 });
 		// Set automatic status report interval
 		await this.sendWait({ si: this.config.statusReportInterval || 250 });
 		// Configure status report fields
 		//await this.sendWait({ sr: false }); // to work with future firmware versions where status report variables are configured incrementally
-		let srVars = [ 'n', 'feed', 'stat', 'qr' ];
+		let srVars = [ 'n', 'feed', 'stat' ];
 		for (let axis of this.axisLabels) { srVars.push('mpo' + axis); }
 		let srConfig = {};
 		for (let name of srVars) { srConfig[name] = true; }
