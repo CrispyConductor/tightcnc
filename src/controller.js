@@ -10,6 +10,8 @@ class Controller extends EventEmitter {
 	 * Events that should be emitted:
 	 *   - statusUpdate - When the status variables are updated.  No parameters.
 	 *   - ready - When the connection is ready for use.
+	 *   - sent - When raw data is sent, argument should be raw data string. (newline may be absent)
+	 *   - received - When raw data is received, argument should be raw data string. (newline may be absent)
 	 *
 	 * @class Controller
 	 * @constructor

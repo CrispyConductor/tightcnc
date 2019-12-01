@@ -102,6 +102,7 @@ class TinyGController extends Controller {
 			this.linesToSend--;
 			this.responseWaiters.push(responseWaiter);
 		}
+		this.emit('sent', line);
 	}
 
 	// Push a line onto the send queue to be sent when buffer space is available
@@ -133,6 +134,7 @@ class TinyGController extends Controller {
 	}
 
 	_handleReceiveSerialDataLine(line) {
+		this.emit('received', line);
 		if (line[0] != '{') throw new XError(XError.PARSE_ERROR, 'Errror parsing received serial line', { data: line });
 		let data = JSON.parse(line);
 		let statusVars = {}; // updated status vars
@@ -143,6 +145,10 @@ class TinyGController extends Controller {
 		if ('qr' in data) {
 			// Update queue report
 			statusVars.qr = data.qr;
+		}
+		for (let key in this.currentStatusReport) {
+			if (key in data) statusVars[key] = data[key];
+			if ('r' in data && key in data['r']) statusVars[key] = data['r'][key];
 		}
 		if ('r' in data) {
 			if ('sr' in data.r) {
@@ -198,7 +204,7 @@ class TinyGController extends Controller {
 			if (('g30' + axis) in sr) this.storedPositions[1][axisNum] = sr['g30' + axis];
 			if (('hom' + axis) in sr) this.homed[axisNum] = !!sr['hom' + axis];
 			for (let csys = 0; csys < 6; csys++) {
-				csysName = 'g5' + (4 + csys);
+				let csysName = 'g5' + (4 + csys);
 				if (!this.coordSysOffsets[csys]) this.coordSysOffsets[csys] = [];
 				if ((csysName + axis) in sr) this.coordSysOffsets[csys][axisNum] = sr[csysName + axis];
 			}
@@ -302,7 +308,7 @@ class TinyGController extends Controller {
 				let axis = this.axisLabels[axisNum];
 				vars.push('mpo' + axis, 'g92' + axis, 'g28' + axis, 'g30' + axis, 'hom' + axis);
 				for (let csys = 0; csys < 6; csys++) {
-					vars.push('g5' + (4 + csys));
+					vars.push('g5' + (4 + csys) + axis);
 				}
 			}
 		}
@@ -339,7 +345,7 @@ class TinyGController extends Controller {
 		// Set automatic status report interval
 		await this.sendWait({ si: this.config.statusReportInterval || 250 });
 		// Configure status report fields
-		await this.sendWait({ sr: false }); // to work with future firmware versions where status report variables are configured incrementally
+		//await this.sendWait({ sr: false }); // to work with future firmware versions where status report variables are configured incrementally
 		let srVars = [ 'n', 'feed', 'stat', 'qr' ];
 		for (let axis of this.axisLabels) { srVars.push('mpo' + axis); }
 		let srConfig = {};
