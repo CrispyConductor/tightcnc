@@ -346,6 +346,17 @@ class TinyGController extends Controller {
 			return;
 		}
 
+		// Check if this is an error report indicating an alarm state
+		if ('er' in data) {
+			this.error = true;
+			this.errorData = data.er;
+			this.ready = false;
+			let err = new XError(XError.MACHINE_ERROR, data.er.msg || ('Code ' + data.er.st) || 'Machine error report', data.er);
+			this._cancelRunningOps(err);
+			this.emit('error', err);
+			return;
+		}
+
 		let statusVars = {}; // updated status vars
 		if ('sr' in data) {
 			// Update the current status variables
@@ -575,7 +586,6 @@ class TinyGController extends Controller {
 		this.responseWaiters = [];
 		this.linesToSend = 4;
 		this._waitingForSync = false;
-		this.currentStatusReport = {};
 	}
 
 	_setupSerial() {
@@ -602,6 +612,7 @@ class TinyGController extends Controller {
 		});
 
 		this.serialReceiveBuf = '';
+		this.currentStatusReport = {};
 		this._resetSerialState();
 
 		this.serial.on('data', (buf) => {
@@ -717,9 +728,11 @@ class TinyGController extends Controller {
 	}
 
 	cancel() {
+		if (!this.paused) this.hold();
 		this._cancelRunningOps(new XError(XError.CANCELLED, 'Operation cancelled'));
 		this._sendImmediate('%');
 		this.paused = false;
+		this._resetSerialState();
 	}
 
 	reset() {
