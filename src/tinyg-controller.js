@@ -313,7 +313,7 @@ class TinyGController extends Controller {
 				removeListeners();
 				reject(err);
 			};
-			removeListeners = () -> {
+			removeListeners = () => {
 				this.removeListener('statusUpdate', statusHandler);
 				this.removeListener('sent', statusHandler);
 				this.removeListener('afterReceived', statusHandler);
