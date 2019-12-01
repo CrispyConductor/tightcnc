@@ -698,8 +698,8 @@ class TinyGController extends Controller {
 	}
 
 	_cancelRunningOps(err) {
-		for (let p in this.responseWaiterQueue) p.reject(err);
-		for (let p in this.responseWaiters) p.reject(err);
+		for (let p of this.responseWaiterQueue) if (p) p.reject(err);
+		for (let p of this.responseWaiters) if (p) p.reject(err);
 		this.emit('cancelRunningOps', err);
 		this.sendQueue = [];
 		this.responseWaiterQueue = [];
@@ -719,6 +719,7 @@ class TinyGController extends Controller {
 	cancel() {
 		this._cancelRunningOps(new XError(XError.CANCELLED, 'Operation cancelled'));
 		this._sendImmediate('%');
+		this.paused = false;
 	}
 
 	reset() {
