@@ -2,6 +2,18 @@ const Controller = require('./controller');
 const SerialPort = require('serialport');
 const XError = require('xerror');
 const pasync = require('pasync');
+const gcodeParser = require('gcode-parser');
+
+// Wrapper on top of gcode-parser to parse a line and return a map from word keys to values
+function gparse(line) {
+	let p = gcodeParser.parseLine(line);
+	if (!p || !p.words || !p.words.length) return null;
+	let r = {};
+	for (let pair of p.words) {
+		r[pair[0].toUpperCase()] = pair[1];
+	}
+	return r;
+}
 
 class TinyGController extends Controller {
 
@@ -98,6 +110,21 @@ class TinyGController extends Controller {
 			this.serial.write(line);
 			if (responseWaiter) responseWaiter.reject(new XError(XError.INVALID_ARGUMENT, 'Cannot wait for response on control character'));
 		} else {
+			// Check if this line will require any synchronization of state
+			let stateSyncInfo = this._checkGCodeUpdateState(line);
+			if (stateSyncInfo) {
+				if (stateSyncInfo[1] && stateSyncInfo[1].length) {
+					// There's additional gcode to send immediately after this
+					let extraToSend = stateSyncInfo[1];
+					this.sendQueue.unshift(...extraToSend);
+				}
+				if (stateSyncInfo[0]) {
+					// There's a function to execute after the response is received
+					if (!responseWaiter) responseWaiter = pasync.waiter();
+					responseWaiter.promise.then(() => stateSyncInfo[0](), () => {});
+				}
+			}
+
 			this.serial.write(line + '\n');
 			this.linesToSend--;
 			this.responseWaiters.push(responseWaiter);
@@ -110,6 +137,137 @@ class TinyGController extends Controller {
 		this.sendQueue.push(line);
 		this.responseWaiterQueue.push(null);
 		this._doSend();
+	}
+
+	// Checks to see if the line of gcode should update stored state once executed.  This must be called in order
+	// on all gcode sent to the device.  If the gcode line should update stored state, this returns a function that
+	// should be called after the response is received for the gcode line.  It may also return (as the second element
+	// of an array) a list of commands to send immediately after this gcode to ensure state is updated.
+	_checkGCodeUpdateState(line) {
+		let wordmap = gparse(line);
+		if (!wordmap) return null;
+		/* gcodes to watch for:
+		 * G10 L2 - Changes coordinate system offsets
+		 * G20/G21 - Select between inches and mm
+		 * G28.1/G30.1 - Changes stored position
+		 * G28.2 - Changes axis homed flags
+		 * G28.3 - Also homes
+		 * G54-G59 - Changes active coordinate system
+		 * G90/G91 - Changes absolute/incremental
+		 * G92* - Sets offset
+		 * M2/M30 - In addition to ending program (handled by status reports), also changes others https://github.com/synthetos/TinyG/wiki/Gcode-Support#m2-m30-program-end
+		 * M3/M4/M5 - Changes spindle state
+		 * M7/M8/M9 - Changes coolant state
+		*/
+		let fn = null;
+		let sendmore = [];
+
+		let zeropoint = [];
+		for (let i = 0; i < this.axisLabels.length; i++) zeropoint.push(0);
+
+		if (wordmap.G === 10 && wordmap.L === 2 && wordmap.P) {
+			fn = () => {
+				let csys = wordmap.P - 1;
+				if (!this.coordSysOffsets[csys]) this.coordSysOffsets[csys] = zeropoint;
+				for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) {
+					let axis = this.axisLabels[axisNum].toUpperCase();
+					if (axis in wordmap) this.coordSysOffsets[csys][axisNum] = wordmap[axis];
+				}
+				this.emit('statusUpdate');
+			};
+		}
+		if (wordmap.G === 20 || wordmap.G === 21) {
+			fn = () => {
+				this.units = (wordmap.G === 20) ? 'in' : 'mm';
+				this.emit('statusUpdate');
+			};
+		}
+		if (wordmap.G === 28.1 || wordmap.G === 30.1) {
+			fn = () => {
+				let posnum = (wordmap.G === 28.1) ? 0 : 1;
+				this.storedPositions[posnum] = this.mpos.slice();
+				this.emit('statusUpdate');
+			};
+		}
+		if (wordmap.G === 28.2 || wordmap.G === 28.3) {
+			fn = () => {
+				for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) {
+					let axis = this.axisLabels[axisNum].toUpperCase();
+					if (axis in wordmap) this.homed[axisNum] = true;
+				}
+				this.emit('statusUpdate');
+			};
+		}
+		if (wordmap.G >= 54 && wordmap.G <= 59 && Math.floor(wordmap.G) === wordmap.G) {
+			fn = () => {
+				this.activeCoordSys = wordmap.G - 54;
+				this.emit('statusUpdate');
+			};
+		}
+		if (wordmap.G === 90 || wordmap.G === 91) {
+			fn = () => {
+				this.incremental = !(wordmap.G === 90);
+				this.emit('statusUpdate');
+			};
+		}
+		if (wordmap.G === 92) {
+			fn = () => {
+				if (!this.offset) this.offset = zeropoint;
+				for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) {
+					let axis = this.axisLabels[axisNum].toUpperCase();
+					if (axis in wordmap) this.offset[axisNum] = wordmap[axis];
+				}
+				this.offsetEnabled = true;
+				this.emit('statusUpdate');
+			};
+		}
+		if (wordmap.G === 92.1) {
+			fn = () => {
+				this.offset = zeropoint;
+				this.offsetEnabled = false;
+				this.emit('statusUpdate');
+			};
+		}
+		if (wordmap.G === 92.2) {
+			fn = () => {
+				this.offsetEnabled = false;
+				this.emit('statusUpdate');
+			};
+		}
+		if (wordmap.G === 92.3) {
+			fn = () => {
+				this.offsetEnabled = true;
+				this.emit('statusUpdate');
+			};
+		}
+		if (wordmap.M === 2 || wordmap.M === 30) {
+			fn = () => {
+				this.offset = zeropoint;
+				this.offsetEnabled = false;
+				this.activeCoordSys = 0;
+				this.incremental = false;
+				this.spindle = false;
+				this.coolant = false;
+				this.emit('statusUpdate');
+			};
+			sendmore.push({ coor: null }, { unit: null });
+		}
+		if (wordmap.M === 3 || wordmap.M === 4 || wordmap.M === 5) {
+			fn = () => {
+				this.spindle = (wordmap.M === 5) ? false : true;
+				this.emit('statusUpdate');
+			};
+		}
+		if (wordmap.M === 7 || wordmap.M === 8 || wordmao.M === 9) {
+			fn = () => {
+				if (wordmap.M === 7) this.coolant = 1;
+				else if (wordmap.M === 8) this.coolant = 2;
+				else this.coolant = false;
+			};
+		}
+
+		if (!fn && !sendmore.length) return null;
+		return [ fn, sendmore ];
 	}
 
 	async waitSync() {
