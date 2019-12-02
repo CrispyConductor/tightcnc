@@ -840,6 +840,12 @@ class TinyGController extends Controller {
 		 *   after probing is complete).  So we can't rely on this to know when probe movement has started.
 		 *   Instead, just wait for a delay after sending the probe before checking for movement status.
 		 *   This is handled by waitSync().
+		 * - On my TinyG, its active coordinate system is randomly reset after probing.  Handle this by saving
+		 *   the active coordinate system prior to probing, and manually restoring it after.
+		 * - I've occasionally seen cases where the 'e' return value in the probe report does not reliably
+		 *   report when the probe it tripped (it's set to 0 even if the probe was in fact tripped).  To
+		 *   compensate for this, also consider the probe tripped if it terminated before reaching its
+		 *   endpoint.
 		 */
 
 		let waiter;
@@ -857,7 +863,7 @@ class TinyGController extends Controller {
 			// Ensure a single axis will move.
 			let selectedAxisNum = null;
 			let curOffsets = this.getCoordOffsets();
-			let curPos = this.getPos();
+			let curPos = this.getPos().slice();
 			for (let axisNum = 0; axisNum < pos.length; axisNum++) {
 				if (typeof pos[axisNum] === 'number' && pos[axisNum] !== curPos[axisNum]) {
 					if (selectedAxisNum !== null) {
@@ -867,6 +873,9 @@ class TinyGController extends Controller {
 				}
 			}
 			if (selectedAxisNum === null) throw new XError(XError.INVALID_ARGUMENT, 'Cannot probe to same location');
+
+			// Store the currently active coordinate system to work around tinyg bug
+			let activeCoordSys = this.activeCoordSys;
 
 			// Test if the current version of TinyG uses machine coordinates for probing or local coordinates
 			// Note that if offsets are zero, it doesn't matter, and don't bother testing
@@ -916,6 +925,7 @@ class TinyGController extends Controller {
 
 			// Run the probe in the coordinate system chosen
 			let probeTo = useMachineCoords ? (pos[selectedAxisNum] + curOffsets[selectedAxisNum]) : pos[selectedAxisNum];
+			let probeDirection = (pos[selectedAxisNum] > curPos[selectedAxisNum]) ? 1 : -1;
 			let probeGcode = 'G38.2 ' + this.axisLabels[selectedAxisNum].toUpperCase() + probeTo + ' F' + feed;
 			waiter = pasync.waiter();
 			this._sendImmediate(probeGcode, waiter);
@@ -932,6 +942,14 @@ class TinyGController extends Controller {
 			let probeTripped = !!probeReport.e;
 			let probePos = probeReport[this.axisLabels[selectedAxisNum]];
 
+			// Workaround for e value sometimes being incorrect
+			if (
+				(probeDirection > 0 && probePos < probeTo) ||
+				(probeDirection < 0 && probePos > probeTo)
+			) {
+				probeTripped = true;
+			}
+
 			// Handle probe results
 			if (!probeTripped) {
 				throw new XError(XError.PROBE_NOT_TRIPPED, 'Probe was not tripped during probing');
@@ -940,7 +958,14 @@ class TinyGController extends Controller {
 				// Convert probe report position from machine coords back to offset coords
 				probePos = probePos - curOffsets[selectedAxisNum];
 			}
-			curPos[selectedAxis] = probePos;
+			curPos[selectedAxisNum] = probePos;
+
+			// Restore active coordinate system (to work around bug)
+			if (typeof activeCoordSys === 'number' && activeCoordSys >= 0) {
+				this._sendImmediate('G' + (54 + activeCoordSys));
+				this.activeCoordSys = activeCoordSys;
+			}
+
 			return curPos;
 
 		} finally {

@@ -59,7 +59,7 @@ class Controller extends EventEmitter {
 	 * @return {Number[]}
 	 */
 	getPos() {
-		let off = this.geCoordOffsets();
+		let off = this.getCoordOffsets();
 		let r = [];
 		for (let i = 0; i < this.mpos.length; i++) {
 			let o = off[i] || 0;
