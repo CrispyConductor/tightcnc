@@ -950,6 +950,12 @@ class TinyGController extends Controller {
 				probeTripped = true;
 			}
 
+			// Restore active coordinate system (to work around bug)
+			if (typeof activeCoordSys === 'number' && activeCoordSys >= 0) {
+				this._sendImmediate('G' + (54 + activeCoordSys));
+				this.activeCoordSys = activeCoordSys;
+			}
+
 			// Handle probe results
 			if (!probeTripped) {
 				throw new XError(XError.PROBE_NOT_TRIPPED, 'Probe was not tripped during probing');
@@ -959,13 +965,6 @@ class TinyGController extends Controller {
 				probePos = probePos - curOffsets[selectedAxisNum];
 			}
 			curPos[selectedAxisNum] = probePos;
-
-			// Restore active coordinate system (to work around bug)
-			if (typeof activeCoordSys === 'number' && activeCoordSys >= 0) {
-				this._sendImmediate('G' + (54 + activeCoordSys));
-				this.activeCoordSys = activeCoordSys;
-			}
-
 			return curPos;
 
 		} finally {
