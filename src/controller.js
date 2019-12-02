@@ -27,6 +27,48 @@ class Controller extends EventEmitter {
 	}
 
 	/**
+	 * Gets current offsets from machine coordinate system.
+	 *
+	 * @method getCoordOffsets
+	 * @return {Number[]}
+	 */
+	getCoordOffsets() {
+		let offsets = [];
+		for (let i = 0; i < this.axisLabels.length; i++) offsets[i] = 0;
+		if (typeof this.activeCoordSys === 'number' && this.activeCoordSys >= 0) {
+			// Not machine coordinates; set offsets from this coord system
+			let csysOffsets = this.coordSysOffsets[this.activeCoordSys];
+			if (csysOffsets) {
+				for (let i = 0; i < csysOffsets.length; i++) {
+					offsets[i] += csysOffsets[i];
+				}
+			}
+		}
+		if (this.offsetEnabled && this.offset) {
+			for (let i = 0; i < this.offset.length; i++) {
+				offsets[i] += this.offset[i];
+			}
+		}
+		return offsets;
+	}
+
+	/**
+	 * Gets the position in current coordinate system, with offset.
+	 *
+	 * @method getPos
+	 * @return {Number[]}
+	 */
+	getPos() {
+		let off = this.geCoordOffsets();
+		let r = [];
+		for (let i = 0; i < this.mpos.length; i++) {
+			let o = off[i] || 0;
+			r.push(this.mpos[i] - o);
+		}
+		return r;
+	}
+
+	/**
 	 * Resets state properties to defaults.
 	 *
 	 * @method resetState
@@ -206,7 +248,10 @@ XError.registerErrorCode('probe_end', { message: 'Probe reached end position wit
 XError.registerErrorCode('parse_error', { message: 'Error parsing' });
 // Error code for generic error report from the machine
 XError.registerErrorCode('machine_error', { message: 'Machine error' });
+// When an operation is cancelled
 XError.registerErrorCode('cancelled', { message: 'Cancelled' });
+// Error when a probe is not tripped
+XError.registerErrorCode('probe_not_tripped', { message: 'Probe was not tripped' });
 
 module.exports = Controller;
 

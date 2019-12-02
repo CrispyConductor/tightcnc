@@ -33,7 +33,9 @@ class TinyGController extends Controller {
 		this.axisLabels = [ 'x', 'y', 'z', 'a', 'b', 'c' ];
 		this.usedAxes = config.usedAxes || [ true, true, true, false, false, false ];
 
-		this._waitingForSync = false;
+		this._waitingForSync = false; // disable sending additional commands while waiting for synchronization
+		this._disableSending = false; // flag to disable sending data using normal channels (_sendImmediate still works)
+		this._disableResponseErrorEvent = false; // flag to disable error events in cases where errors are expected
 		this.currentStatusReport = {};
 		this.plannerQueueSize = 0; // Total size of planner queue
 		this.plannerQueueFree = 0; // Number of buffers in the tinyg planner queue currently open
@@ -95,7 +97,7 @@ class TinyGController extends Controller {
 
 	// Send as many lines as we can from the send queue
 	_doSend() {
-		if (this._waitingForSync) return; // don't send anything more until state has synchronized
+		if (this._waitingForSync || this._disableSending) return; // don't send anything more until state has synchronized
 		let curLinesToSend = this.linesToSend;
 		if (this.config.oversend && this.plannerQueueSize) {
 			let plannerNumToSend = this.plannerQueueFree - this.oversendPlannerMinAvailable;
@@ -291,7 +293,12 @@ class TinyGController extends Controller {
 
 	async waitSync() {
 		// Fetch new status report to ensure up-to-date info (mostly in case a move was just requested and we haven't gotten an update from that yet)
-		await this.sendWait({ sr: null });
+		// If sends are disabled, instead just wait some time to make sure a response was received
+		if (this._disableSending) {
+			await pasync.setTimeout(250);
+		} else {
+			await this.sendWait({ sr: null });
+		}
 		// If the planner queue is empty, and we're not currently moving, then should be good
 		if (!this.moving && this.plannerQueueFree === this.plannerQueueSize && !this.sendQueue.length && !this.responseWaiters.length) return Promise.resolve();
 		// Otherwise, register a listener for status changes, and resolve when these conditions are met
@@ -351,12 +358,14 @@ class TinyGController extends Controller {
 
 		// Check if this is an error report indicating an alarm state
 		if ('er' in data) {
-			this.error = true;
-			this.errorData = data.er;
-			this.ready = false;
-			let err = new XError(XError.MACHINE_ERROR, data.er.msg || ('Code ' + data.er.st) || 'Machine error report', data.er);
-			this._cancelRunningOps(err);
-			this.emit('error', err);
+			if (!this._disableResponseErrorEvent) {
+				this.error = true;
+				this.errorData = data.er;
+				this.ready = false;
+				let err = new XError(XError.MACHINE_ERROR, data.er.msg || ('Code ' + data.er.st) || 'Machine error report', data.er);
+				this._cancelRunningOps(err);
+				this.emit('error', err);
+			}
 			return;
 		}
 
@@ -390,17 +399,22 @@ class TinyGController extends Controller {
 			this._updateStatusReport(statusVars);
 			// Check if successful or failure response
 			let statusCode = data.f ? data.f[1] : 0;
-			// Update the send buffer stats and try to send more data
-			this.linesToSend++;
-			let responseWaiter = this.responseWaiters.shift();
-			if (responseWaiter) {
-				// status codes: https://github.com/synthetos/TinyG/wiki/TinyG-Status-Codes
-				if (statusCode === 0) {
-					responseWaiter.resolve(data);
-				} else {
-					responseWaiter.reject(new XError(XError.MACHINE_ERROR, 'TinyG error status code: ' + statusCode));
+			// If there are no response waiter entries (including nulls), it means a response was received without an associated request.
+			// This seems to occur during probing on my current firmware version (see comment in probe()).  Ignore such responses.
+			if (this.responseWaiters.length) {
+				// Update lines to send counter
+				this.linesToSend++;
+				let responseWaiter = this.responseWaiters.shift();
+				if (responseWaiter) {
+					// status codes: https://github.com/synthetos/TinyG/wiki/TinyG-Status-Codes
+					if (statusCode === 0) {
+						responseWaiter.resolve(data);
+					} else {
+						responseWaiter.reject(new XError(XError.MACHINE_ERROR, 'TinyG error status code: ' + statusCode));
+					}
 				}
 			}
+			// Try to send more data
 			this._doSend();
 		} else {
 			this._updateStatusReport(statusVars);
@@ -589,6 +603,7 @@ class TinyGController extends Controller {
 		this.responseWaiters = [];
 		this.linesToSend = 4;
 		this._waitingForSync = false;
+		this._disableSending = false;
 	}
 
 	_setupSerial() {
@@ -769,9 +784,7 @@ class TinyGController extends Controller {
 
 	realTimeMove(axisNum, inc) {
 		let numQueued = this.realTimeMovesQueued[axisNum];
-		// If there's stuff in the planner queue, count that
-		numQueued += (this.plannerQueueSize - this.plannerQueueFree);
-		let maxQueued = this.config.maxRealTimeMovesQueued || 2;
+		let maxQueued = this.config.maxRealTimeMovesQueued || 5;
 		if (numQueued >= maxQueued) return;
 		this.realTimeMovesQueued[axisNum]++;
 		this.send('G91');
@@ -786,6 +799,155 @@ class TinyGController extends Controller {
 	}
 
 	async probe(pos, feed = null) {
+		/*
+		 * My TinyG {fb:440.20, fv:0.97} has probing behavior that does not match the documented
+		 * behavior (12/1/19) in several ways.  This code should work with both my TinyG, and the behavior
+		 * as documented.  The oddities are:
+		 * - The documentation implies that automatic probe reports are generated outside of a
+		 *   response wrapper.  Ie, automatic probe reports should come back as {"prb":{...}}.
+		 *   Instead, they are wrapped in a response wrapper as {"r":{"prb":{...}}.  This is
+		 *   inconsistent with the communications protocol documentation which states that exactly
+		 *   one {"r":{...}} response is returned for each sent request, and causes their provided
+		 *   communications algorithm to become desynced (since the probe report with response
+		 *   wrapper is generated without an accompanying request).  This is handled by 1) Ignoring
+		 *   any responses that occur when there are no in-flight requests, 2) Ensure there are no
+		 *   other in-flight requests before probing, 3) Disabling data sends while probing is in
+		 *   progress, 4) Ignoring any automatic probe reports and instead manually requesting them.
+		 *   5) Waiting a small period of time after probing completes to allow this extra response
+		 *   to be received and ignored, before sending any more data.
+		 * - The documentation states that automatic probe reports can be disabled with {prbr:f}.
+		 *   This has no effect for me, and automatic probe reports continue to be generated.  Hence
+		 *   the above workarounds.
+		 * - The documentation states that G38.3 should be used for probing without alarming on no
+		 *   contact.  G38.3 does nothing for me.  Instead, G38.2 is used here.
+		 * - The documentation states that G38.2 will put the machine in soft alarm state if the
+		 *   probe is not tripped.  This does not occur for me.  To handle systems where it may,
+		 *   {clear:null} is sent unconditionally after probing completes.  Additionally, if waitForSync
+		 *   rejects, the rejection is ignored.
+		 * - On my TinyG, G38.2 seems to do nothing in some cases where more than one axis is provided.
+		 *   So this function ensures that at most one axis differs from the current position, and only
+		 *   sends that.
+		 * - The LinuxCNC documentation (referenced by the TinyG documentation) states that the
+		 *   coordinates of the parameters should be in the current coordinate system (and, presumably,
+		 *   should match the coordinates of the probe reports).  With my TinyG, both the parameters
+		 *   and coordinates are in machine coordinates.  Because this probably won't be reliably
+		 *   consistent, a test is performed for the first probe.  A G38.2 probe is sent for the current
+		 *   position (either in machine coords or local coords, whichever will cause the probe to
+		 *   move in the right direction if we're wrong).  If any motion is detected, the move is immediately
+		 *   cancelled, and we know it's the other coordinate system.  If there's no motion, we
+		 *   know it's that coordinate system.  This test can be overridden using config.probeUsesMachineCoords.
+		 * - Requests for status reports during probing don't seem to work (they seem to be delayed until
+		 *   after probing is complete).  So we can't rely on this to know when probe movement has started.
+		 *   Instead, just wait for a delay after sending the probe before checking for movement status.
+		 *   This is handled by waitSync().
+		 */
+
+		let waiter;
+		if (feed === null || feed === undefined) feed = 25;
+
+		// Disable other requests while probing is running
+		this._disableSending = true;
+		// Disable error events, since we may need to handle soft alarms
+		this._disableResponseErrorEvent = true;
+
+		try {
+			// Wait for motion to stop so position information is synchronized
+			await this.waitSync();
+
+			// Ensure a single axis will move.
+			let selectedAxisNum = null;
+			let curOffsets = this.getCoordOffsets();
+			let curPos = this.getPos();
+			for (let axisNum = 0; axisNum < pos.length; axisNum++) {
+				if (typeof pos[axisNum] === 'number' && pos[axisNum] !== curPos[axisNum]) {
+					if (selectedAxisNum !== null) {
+						throw new XError(XError.INVALID_ARGUMENT, 'Can only probe on a single axis at once');
+					}
+					selectedAxisNum = axisNum;
+				}
+			}
+			if (selectedAxisNum === null) throw new XError(XError.INVALID_ARGUMENT, 'Cannot probe to same location');
+
+			// Test if the current version of TinyG uses machine coordinates for probing or local coordinates
+			// Note that if offsets are zero, it doesn't matter, and don't bother testing
+			// If, at some point, the build versions of TinyG that have this oddity are known and published, those will be a much better test than this hack
+			if (this.config.probeUsesMachineCoords === undefined && curOffsets[selectedAxisNum] !== 0) {
+				// See above block comment for explanation of this process.
+				// determine if test probe is to same coordinates in offset coords or machine coords
+				let probeTestToSameMachineCoords = curOffsets[selectedAxisNum] > 0;
+				if (pos[selectedAxisNum] - curPos[selectedAxisNum] < 0) probeTestToSameMachineCoords = !probeTestToSameMachineCoords;
+				let probeTestCoord = probeTestToSameMachineCoords ? this.mpos[selectedAxisNum] : curPos[selectedAxisNum];
+				let startingMCoord = this.mpos[selectedAxisNum];
+				// run probe to selected point; use _sendImmediate since normal sends are disabled
+				const probeTestFeed = 1;
+				let testProbeGcode = 'G38.2 ' + this.axisLabels[selectedAxisNum].toUpperCase() + probeTestCoord + ' F' + probeTestFeed;
+				waiter = pasync.waiter();
+				this._sendImmediate(testProbeGcode, waiter);
+				// Probing to the same point is not currently a response error on my system, but in case it becomes one, wrap this in a try/catch
+				try { await waiter.promise; } catch (err) {}
+				// On my system, probing to the same point generates an extra response (after the normal response) that looks like this: {"r":{"msg":"Probing error - invalid probe destination"},"f":[1,250,0,8644]}
+				// To allow time for this response to be received, as well as for movement to start (at this slow feed rate), wait a short period of time
+				await pasync.setTimeout(750);
+				// Execute a feed hold (to stop movement if it's occurring), a wipe (to prevent the movement from resuming), and a clear (in case it soft alarmed)
+				this._sendImmediate('!');
+				this._sendImmediate('%');
+				this._sendImmediate({clear:null});
+				// Reject the waiter if it hasn't resolved, since we cleared it out with the wipe
+				waiter.reject('');
+				// Request an updated machine position for the axis we're testing
+				waiter = pasync.waiter();
+				this._sendImmediate({ ['mpo' + this.axisLabels[selectedAxisNum].toLowerCase()]: null }, waiter);
+				let mpoResult = await waiter.promise;
+				// Depending on whether or not the probe moved during that time, we now know if this tinyg version expects machine or offset coordinates
+				let nowMCoord = mpoResult.r['mpo' + this.axisLabels[selectedAxisNum].toLowerCase()];
+				if (typeof nowMCoord !== 'number') throw new XError(XError.INTERNAL_ERROR, 'Unexpected response from TinyG');
+				let probeMoved = nowMCoord !== startingMCoord;
+				if (probeMoved) {
+					this.config.probeUsesMachineCoords = !probeTestToSameMachineCoords;
+					// Move back to the starting position before the test
+					waiter = pasync.waiter();
+					this._sendImmediate('G53 G0 ' + this.axisLabels[selectedAxisNum].toUpperCase() + startingMCoord, waiter);
+					await waiter.promise;
+				} else {
+					this.config.probeUsesMachineCoords = probeTestToSameMachineCoords;
+				}
+			}
+			let useMachineCoords = curOffsets[selectedAxisNum] === 0 || this.config.probeUsesMachineCoords;
+
+			// Run the probe in the coordinate system chosen
+			let probeTo = useMachineCoords ? (pos[selectedAxisNum] + curOffsets[selectedAxisNum]) : pos[selectedAxisNum];
+			let probeGcode = 'G38.2 ' + this.axisLabels[selectedAxisNum].toUpperCase() + probeTo + ' F' + feed;
+			waiter = pasync.waiter();
+			this._sendImmediate(probeGcode, waiter);
+			await waiter.promise; // wait for first response to probe to be received
+			await this.waitSync(); // wait for probe movement to stop
+			await pasync.setTimeout(250); // wait additional time to ensure "extra" response is received and ignored
+			this._sendImmediate({clear:null}); // clear possible soft alarm state
+
+			// Fetch probe report
+			waiter = pasync.waiter();
+			this._sendImmediate({ prb: null }, waiter);
+			let probeResult = await waiter.promise;
+			let probeReport = probeResult.r.prb;
+			let probeTripped = !!probeReport.e;
+			let probePos = probeReport[this.axisLabels[selectedAxisNum]];
+
+			// Handle probe results
+			if (!probeTripped) {
+				throw new XError(XError.PROBE_NOT_TRIPPED, 'Probe was not tripped during probing');
+			}
+			if (useMachineCoords) {
+				// Convert probe report position from machine coords back to offset coords
+				probePos = probePos - curOffsets[selectedAxisNum];
+			}
+			curPos[selectedAxis] = probePos;
+			return curPos;
+
+		} finally {
+			this._disableSending = false;
+			this._disableResponseErrorEvent = false;
+			this._doSend();
+		}
 	}
 
 };
