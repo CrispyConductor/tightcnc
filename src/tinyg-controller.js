@@ -31,11 +31,14 @@ class TinyGController extends Controller {
 		this.responseWaiterQueue = []; // Queue of pasync waiters to be resolved when responses are received to lines; indexes match those of this.sendQueue
 		this.responseWaiters = []; // pasync waiters for lines currently "in flight" (sent and waiting for response)
 		this.axisLabels = [ 'x', 'y', 'z', 'a', 'b', 'c' ];
+		this.usedAxes = config.usedAxes || [ true, true, true, false, false, false ];
 
 		this._waitingForSync = false;
 		this.currentStatusReport = {};
 		this.plannerQueueSize = 0; // Total size of planner queue
 		this.plannerQueueFree = 0; // Number of buffers in the tinyg planner queue currently open
+
+		this.realTimeMovesQueued = [ 0, 0, 0, 0, 0, 0 ]; // how many real time moves are in flight for each axis
 	}
 
 	initConnection() {
@@ -739,6 +742,48 @@ class TinyGController extends Controller {
 		this._cancelRunningOps(new XError(XError.CANCELLED, 'Machine reset'));
 		this._sendImmediate('\x18');
 		this.ready = false; // will be set back to true once SYSTEM READY message received
+	}
+
+	async home(axes = null) {
+		if (!axes) axes = this.usedAxes;
+		let gcode = 'G28.2';
+		for (let axisNum = 0; axisNum < axes.length; axisNum++) {
+			if (axes[axisNum]) {
+				gcode += ' ' + this.axisLabels[axisNum].toUpperCase() + '0';
+			}
+		}
+		await this.sendWait(gcode);
+		await this.waitSync();
+	}
+
+	async move(pos, feed = null) {
+		let gcode = feed ? 'G1' : 'G0';
+		for (let axisNum = 0; axisNum < pos.length; axisNum++) {
+			if (typeof pos[axisNum] === 'number') {
+				gcode += ' ' + this.axisLabels[axisNum].toUpperCase() + pos[axisNum];
+			}
+		}
+		await this.sendWait(gcode);
+		await this.waitSync();
+	}
+
+	realTimeMove(axisNum, inc) {
+		let numQueued = this.realTimeMovesQueued[axisNum];
+		// If there's stuff in the planner queue, count that
+		numQueued += (this.plannerQueueSize - this.plannerQueueFree);
+		let maxQueued = this.config.maxRealTimeMovesQueued || 2;
+		if (numQueued >= maxQueued) return;
+		this.realTimeMovesQueued[axisNum]++;
+		this.send('G91');
+		let gcode = 'G0 ' + this.axisLabels[axisNum].toUpperCase() + inc;
+		this.send(gcode);
+		this.sendWait('G90')
+			.finally(() => {
+				this.realTimeMovesQueued[axisNum]--;
+			});
+	}
+
+	async probe(pos, feed = null) {
 	}
 
 };
