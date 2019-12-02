@@ -121,9 +121,10 @@ class Controller extends EventEmitter {
 	 * Initialize and connect to CNC machine.  Should update machine state properties as much as is possible.
 	 *
 	 * @method initConnection
+	 * @param {Boolean} retry - Whether to continue retrying to connect on error
 	 * @return {Promise}
 	 */
-	initConnection() {}
+	initConnection(retry = false) {}
 
 	/**
 	 * Sends a (gcode) line to the controller.  Should parse the line to update machine state if necessary.

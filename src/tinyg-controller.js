@@ -43,55 +43,73 @@ class TinyGController extends Controller {
 		this.realTimeMovesQueued = [ 0, 0, 0, 0, 0, 0 ]; // how many real time moves are in flight for each axis
 	}
 
-	initConnection() {
+	initConnection(retry = false) {
+		this.retryConnect = retry;
 		return new Promise((resolve, reject) => {
-			// Set up options for serial connection.  (Set defaults, then apply configs on top.)
-			let serialOptions = {
-				autoOpen: true,
-				baudRate: 115200,
-				dataBits: 8,
-				stopBits: 1,
-				parity: 'none',
-				rtscts: false,
-				xany: true
-			};
-			for (let key in this.config) {
-				if (key in serialOptions) {
-					serialOptions[key] = this.config[key];
+			const tryOpen = () => {
+				// Set up options for serial connection.  (Set defaults, then apply configs on top.)
+				let serialOptions = {
+					autoOpen: true,
+					baudRate: 115200,
+					dataBits: 8,
+					stopBits: 1,
+					parity: 'none',
+					rtscts: false,
+					xany: true
+				};
+				for (let key in this.config) {
+					if (key in serialOptions) {
+						serialOptions[key] = this.config[key];
+					}
 				}
-			}
-			let port = this.config.port || '/dev/ttyUSB0';
+				let port = this.config.port || '/dev/ttyUSB0';
 
-			// Callback for when open returns
-			const serialOpenCallback = (err) => {
-				if (err) {
-					reject(new XError(XError.COMM_ERROR, 'Error opening serial port', err));
-					return;
-				}
+				// Callback for when open returns
+				const serialOpenCallback = (err) => {
+					if (err) {
+						if (retry) {
+							console.error('Error opening serial port: ' + err);
+							setTimeout(() => {
+								tryOpen();
+							}, 5000);
+						} else {
+							reject(new XError(XError.COMM_ERROR, 'Error opening serial port', err));
+						}
+						return;
+					}
 
-				Promise.resolve()
-					.then(() => {
-						// Set up serial port communications handlers
-						this._setupSerial();
-					})
-					.then(() => {
-						// Setup the machine
-						return this._initMachine();
-					})
-					.then(() => {
-						// Set ready and resolve
-						this.ready = true;
-						this.emit('ready');
-						this.emit('statusUpdate');
-						resolve();
-					})
-					.catch((err) => {
-						reject(err);
-					});
+					Promise.resolve()
+						.then(() => {
+							// Set up serial port communications handlers
+							this._setupSerial();
+						})
+						.then(() => {
+							// Setup the machine
+							return this._initMachine();
+						})
+						.then(() => {
+							// Set ready and resolve
+							this.ready = true;
+							this.emit('ready');
+							this.emit('statusUpdate');
+							resolve();
+						})
+						.catch((err) => {
+							if (retry) {
+								console.error('Error initializing machine: ' + err);
+								setTimeout(() => {
+									tryOpen();
+								}, 5000);
+							} else {
+								reject(err);
+							}
+						});
+				};
+
+				// Open serial port, wait for callback
+				this.serial = new SerialPort(port, serialOptions, serialOpenCallback);
 			};
-
-			// Open serial port, wait for callback
-			this.serial = new SerialPort(port, serialOptions, serialOpenCallback);
+			tryOpen();
 		});
 	}
 
@@ -617,7 +635,7 @@ class TinyGController extends Controller {
 						});
 				}, 1000);
 			};
-			tryReopen();
+			if (this.retryConnect) tryReopen();
 		};
 
 		this.serial.on('error', (err) => {
