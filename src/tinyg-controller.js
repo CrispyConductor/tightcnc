@@ -778,7 +778,9 @@ class TinyGController extends Controller {
 		let gcode = 'G0 ' + this.axisLabels[axisNum].toUpperCase() + inc;
 		this.send(gcode);
 		this.sendWait('G90')
-			.finally(() => {
+			.then(() => {
+				this.realTimeMovesQueued[axisNum]--;
+			}, () => {
 				this.realTimeMovesQueued[axisNum]--;
 			});
 	}
