@@ -173,7 +173,7 @@ class OpProbe extends Operation {
 		};
 	}
 	async run(params) {
-		await this.opmanager.controller.probe(params.pos, params.feed);
+		return await this.opmanager.controller.probe(params.pos, params.feed);
 	}
 }
 

@@ -2,7 +2,7 @@ const { APIRouter, JSONRPCInterface } = require('yaar');
 const express = require('express');
 const config = require('littleconf').getConfig();
 const OpManager = require('./op-manager');
-const { createSchema } = require('common-schema');
+const { createSchema, Schema } = require('common-schema');
 const XError = require('xerror');
 
 async function startServer() {
@@ -53,7 +53,7 @@ async function startServer() {
 	}
 
 	for (let operationName in opmanager.operations) {
-		registerOperationAPICal(operationName, opmanager.operations[operationName]);
+		registerOperationAPICall(operationName, opmanager.operations[operationName]);
 	}
 
 	let serverPort = config.serverPort || 2363;
