@@ -1,6 +1,6 @@
 const argv = require('yargs').argv;
 const littleconf = require('littleconf');
-const SimpleCNCClient = require('./clientlib');
+const SimpleCNCClient = require('../lib/clientlib');
 
 if (!argv.operation && !argv.o) {
 	console.error('Must provide operation to execute with --operation');
