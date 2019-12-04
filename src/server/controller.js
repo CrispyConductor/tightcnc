@@ -104,7 +104,7 @@ class Controller extends EventEmitter {
 		this.incremental = false;
 		// If the machine is currently moving
 		this.moving = false;
-		// If coolant is running.  Can also be 1 or 2 for mist or flood coolant
+		// If coolant is running.  Can also be 1 or 2 for mist or flood coolant, or 3 for both.
 		this.coolant = false;
 		// If spindle is running
 		this.spindle = false;
@@ -115,6 +115,12 @@ class Controller extends EventEmitter {
 		this.errorData = null;
 		// true if a program is running
 		this.programRunning = false;
+		// 1 for CW, -1 for CCW
+		this.spindleDirection = 1;
+		// Speed of spindle, if known
+		this.spindleSpeed = null;
+		// True for inverse feedrate mode
+		this.inverseFeed = false;
 	}
 
 	/**

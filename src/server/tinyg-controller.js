@@ -279,6 +279,12 @@ class TinyGController extends Controller {
 				this.emit('statusUpdate');
 			};
 		}
+		if (wordmap.G === 93 || wordmap.G === 94) {
+			fn = () => {
+				this.inverseFeed = wordmap.G === 93;
+				this.emit('statusUpdate');
+			};
+		}
 		if (wordmap.M === 2 || wordmap.M === 30) {
 			fn = () => {
 				this.offset = zeropoint;
@@ -294,6 +300,8 @@ class TinyGController extends Controller {
 		if (wordmap.M === 3 || wordmap.M === 4 || wordmap.M === 5) {
 			fn = () => {
 				this.spindle = (wordmap.M === 5) ? false : true;
+				this.spindleDirection = (wordmap.M === 4) ? -1 : 1;
+				this.spindleSpeed = wordmap.S || null;
 				this.emit('statusUpdate');
 			};
 		}
