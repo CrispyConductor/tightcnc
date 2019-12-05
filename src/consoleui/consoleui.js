@@ -255,7 +255,13 @@ class ConsoleUI {
 		let machineError = null;
 		if (status.error) {
 			machineState = '{red-bg}ERROR{/red-bg}';
-			machineError = JSON.stringify(status.errorData);
+			if (status.errorData && status.errorData.message) {
+				machineError = status.errorData.message;
+			} else if (status.errorData) {
+				machineError = JSON.stringify(status.errorData);
+			} else {
+				machineError = 'Unknown';
+			}
 		} else if (status.ready) {
 			machineState = '{green-bg}READY{/green-bg}';
 		} else {
