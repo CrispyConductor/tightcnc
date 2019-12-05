@@ -128,9 +128,8 @@ class Controller extends EventEmitter {
 	 *
 	 * @method initConnection
 	 * @param {Boolean} retry - Whether to continue retrying to connect on error
-	 * @return {Promise}
 	 */
-	initConnection(retry = false) {}
+	initConnection(retry = true) {}
 
 	/**
 	 * Sends a (gcode) line to the controller.  Should parse the line to update machine state if necessary.

@@ -41,76 +41,138 @@ class TinyGController extends Controller {
 		this.plannerQueueFree = 0; // Number of buffers in the tinyg planner queue currently open
 
 		this.realTimeMovesQueued = [ 0, 0, 0, 0, 0, 0 ]; // how many real time moves are in flight for each axis
+
+		this._serialListeners = {}; // mapping from serial port event names to listener functions; used to remove listeners during cleanup
 	}
 
-	initConnection(retry = false) {
-		this.retryConnect = retry;
-		return new Promise((resolve, reject) => {
-			const tryOpen = () => {
-				// Set up options for serial connection.  (Set defaults, then apply configs on top.)
-				let serialOptions = {
-					autoOpen: true,
-					baudRate: 115200,
-					dataBits: 8,
-					stopBits: 1,
-					parity: 'none',
-					rtscts: false,
-					xany: true
-				};
-				for (let key in this.config) {
-					if (key in serialOptions) {
-						serialOptions[key] = this.config[key];
+	initConnection(retry = true) {
+		if (this._initializing) return;
+		this._retryConnectFlag = retry;
+		this.ready = false;
+		this._initializing = true;
+		this.emit('statusUpdate');
+
+		// Define an async function and call it so we can use async/await
+		const doInit = async () => {
+
+			// Set up options for serial connection.  (Set defaults, then apply configs on top.)
+			let serialOptions = {
+				autoOpen: true,
+				baudRate: 115200,
+				dataBits: 8,
+				stopBits: 1,
+				parity: 'none',
+				rtscts: false,
+				xany: true
+			};
+			for (let key in this.config) {
+				if (key in serialOptions) {
+					serialOptions[key] = this.config[key];
+				}
+			}
+			let port = this.config.port || '/dev/ttyUSB0';
+
+			// Try to open the serial port
+			await new Promise((resolve, reject) => {
+				this.serial = new SerialPort(port, serialOptions, (err) => {
+					if (err) reject(new XError(XError.COMM_ERROR, 'Error opening serial port', err));
+					else resolve();
+				});
+			});
+
+			// Initialize serial buffers and initial variables
+			this.serialReceiveBuf = '';
+			this.currentStatusReport = {};
+			this._resetSerialState();
+
+			// Set up serial port communications handlers
+			const onSerialError = (err) => {
+				err = new XError(XError.COMM_ERROR, 'Serial port communication error', err);
+				if (!this._initializing) this.emit('error', err); // don't emit during initialization 'cause that's handled separately (by rejecting the waiters during close())
+				this.close(err);
+				this._retryConnect();
+			};
+			const onSerialClose = () => {
+				// Note that this isn't called during intended closures via this.close(), since this.close() first removes all handlers
+				err = new XError(XError.COMM_ERROR, 'Serial port closed unexpectedly');
+				if (!this._initializing) this.emit('error', err);
+				this.close(err);
+				this._retryConnect();
+			};
+			const onSerialData = (buf) => {
+				let str = this.serialReceiveBuf + buf.toString('utf8');
+				let strlines = str.split(/[\r\n]+/);
+				if (!strlines[strlines.length-1].trim()) {
+					// Received data ended in a newline, so don't need to buffer anything
+					strlines.pop();
+					this.serialReceiveBuf = '';
+				} else {
+					// Last line did not end in a newline, so add to buffer
+					this.serialReceiveBuf = strlines.pop();
+				}
+				// Process each received line
+				for (let line of strlines) {
+					line = line.trim();
+					if (line) {
+						try {
+							this._handleReceiveSerialDataLine(line);
+						} catch (err) {
+							if (!this._initializing) this.emit('error', err);
+							this.close(err);
+							this._retryConnect();
+							break;
+						}
 					}
 				}
-				let port = this.config.port || '/dev/ttyUSB0';
-
-				// Callback for when open returns
-				const serialOpenCallback = (err) => {
-					if (err) {
-						if (retry) {
-							console.error('Error opening serial port: ' + err);
-							setTimeout(() => {
-								tryOpen();
-							}, 5000);
-						} else {
-							reject(new XError(XError.COMM_ERROR, 'Error opening serial port', err));
-						}
-						return;
-					}
-
-					Promise.resolve()
-						.then(() => {
-							// Set up serial port communications handlers
-							this._setupSerial();
-						})
-						.then(() => {
-							// Setup the machine
-							return this._initMachine();
-						})
-						.then(() => {
-							// Set ready and resolve
-							this.ready = true;
-							this.emit('ready');
-							this.emit('statusUpdate');
-							resolve();
-						})
-						.catch((err) => {
-							if (retry) {
-								console.error('Error initializing machine: ' + err);
-								setTimeout(() => {
-									tryOpen();
-								}, 5000);
-							} else {
-								reject(err);
-							}
-						});
-				};
-
-				// Open serial port, wait for callback
-				this.serial = new SerialPort(port, serialOptions, serialOpenCallback);
 			};
-			tryOpen();
-		});
+			this._serialListeners = {
+				error: onSerialError,
+				close: onSerialClose,
+				data: onSerialData
+			};
+			for (let eventName in this._serialListeners) this.serial.on(eventName, this._serialListeners[eventName]);
+
+			// Initialize all the machine state properties
+			await this._initMachine();
+
+			// Initialization succeeded
+			this.ready = true;
+			this._initializing = false;
+			this.emit('ready');
+			this.emit('statusUpdate');
+
+		};
+
+		doInit()
+			.catch((err) => {
+				this.emit('error', 'Error initializing connection', err);
+				this.close(err);
+				this._initializing = false;
+				this._retryConnect();
+			});
+	}
+
+	close(err) {
+		if (err && !this.error) {
+			this.error = true;
+			this.errorData = err;
+		}
+		this.ready = false;
+		this._cancelRunningOps(err || new XError(XError.CANCELLED, 'Operations cancelled due to close'));
+		if (this.serial) {
+			for (let key in this._serialListeners) {
+				this.serial.removeListener(key, this._serialListeners[key]);
+			}
+			this._serialListeners = [];
+			try { this.serial.close(); } catch (err2) {}
+			delete this.serial;
+		}
+		this.emit('statusUpdate');
+	}
+
+	_retryConnect() {
+		if (!this._retryConnectFlag) return;
+		setTimeout(() => this.initConnection(true), 5000);
 	}
 
 	// Send as many lines as we can from the send queue
@@ -369,16 +431,9 @@ class TinyGController extends Controller {
 
 		// Check if this is a SYSTEM READY response indicating a reset
 		if ('r' in data && data.r.msg === 'SYSTEM READY') {
-			this._cancelRunningOps(new XError(XError.CANCELLED, 'Machine reset'));
-			this.ready = false;
-			this._resetSerialState();
-			this._initMachine()
-				.then(() => {
-					this.ready = true;
-					this.emit('ready');
-					this.emit('statusUpdate');
-				})
-				.catch((err) => this.emit('error', err));
+			err = new XError(XError.CANCELLED, 'Machine reset');
+			this.close(err);
+			this._retryConnect();
 			return;
 		}
 
@@ -390,7 +445,7 @@ class TinyGController extends Controller {
 				this.ready = false;
 				let err = new XError(XError.MACHINE_ERROR, data.er.msg || ('Code ' + data.er.st) || 'Machine error report', data.er);
 				this._cancelRunningOps(err);
-				this.emit('error', err);
+				if (!this._initializing) this.emit('error', err);
 			}
 			return;
 		}
@@ -630,58 +685,6 @@ class TinyGController extends Controller {
 		this.linesToSend = 4;
 		this._waitingForSync = false;
 		this._disableSending = false;
-	}
-
-	_setupSerial() {
-		const handlePortClosed = () => {
-			this.ready = false;
-			const tryReopen = () => {
-				setTimeout(() => {
-					this.initConnection()
-						.catch(() => {
-							tryReopen();
-						});
-				}, 1000);
-			};
-			if (this.retryConnect) tryReopen();
-		};
-
-		this.serial.on('error', (err) => {
-			this.emit('error', new XError(XError.COMM_ERROR, 'Serial port error', err));
-			handlePortClosed();
-		});
-
-		this.serial.on('close', () => {
-			handlePortClosed();
-		});
-
-		this.serialReceiveBuf = '';
-		this.currentStatusReport = {};
-		this._resetSerialState();
-
-		this.serial.on('data', (buf) => {
-			let str = this.serialReceiveBuf + buf.toString('utf8');
-			let strlines = str.split(/[\r\n]+/);
-			if (!strlines[strlines.length-1].trim()) {
-				// Received data ended in a newline, so don't need to buffer anything
-				strlines.pop();
-				this.serialReceiveBuf = '';
-			} else {
-				// Last line did not end in a newline, so add to buffer
-				this.serialReceiveBuf = strlines.pop();
-			}
-			// Process each received line
-			for (let line of strlines) {
-				line = line.trim();
-				if (line) {
-					try {
-						this._handleReceiveSerialDataLine(line);
-					} catch (err) {
-						this.emit('error', err);
-					}
-				}
-			}
-		});
 	}
 
 	sendStream(stream) {
