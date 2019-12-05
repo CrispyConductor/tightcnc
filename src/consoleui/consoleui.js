@@ -1,5 +1,6 @@
 const blessed = require('blessed');
 const SimpleCNCClient = require('../../lib/clientlib');
+const pasync = require('pasync');
 
 class ConsoleUI {
 
@@ -7,6 +8,7 @@ class ConsoleUI {
 		this.statusBoxes = [];
 		this.hints = [];
 		this.config = require('littleconf').getConfig();
+		this.hintBoxHeight = 2;
 	}
 
 	addHints(hints) {
@@ -33,7 +35,7 @@ class ConsoleUI {
 		let widthPerHint = totalWidth / this.hints.length;
 		let content = '';
 		for (let hint of this.hints) {
-			if (hint.length > widthPerHint) hint = hint.slice(0, widthPerHint - 2);
+			//if (hint.length > widthPerHint) hint = hint.slice(0, widthPerHint - 2); // this breaks with tags
 			let padLeft = Math.floor((widthPerHint - hint.length) / 2);
 			let padRight = Math.ceil((widthPerHint - hint.length) / 2);
 			for (let i = 0; i < padLeft; i++) content += ' ';
@@ -137,22 +139,40 @@ class ConsoleUI {
 
 		this.mainOuterBox = blessed.box({
 			top: 0,
-			height: '100%-2'
+			height: '100%-' + (3 + this.hintBoxHeight)
 		});
 		this.screen.append(this.mainOuterBox);
+
+		let messageSeparatorLine = blessed.line({
+			type: 'line',
+			orientation: 'horizontal',
+			width: '100%',
+			bottom: this.hintBoxHeight + 2
+		});
+		this.screen.append(messageSeparatorLine);
+
+		this.messageBox = blessed.box({
+			tags: true,
+			bottom: this.hintBoxHeight + 1,
+			width: '100%',
+			height: 1,
+			content: '',
+			align: 'center'
+		});
+		this.screen.append(this.messageBox);
 
 		let hintSeparatorLine = blessed.line({
 			type: 'line',
 			orientation: 'horizontal',
 			width: '100%',
-			bottom: 1
+			bottom: this.hintBoxHeight
 		});
 		this.screen.append(hintSeparatorLine);
 
 		this.bottomHintBox = blessed.box({
 			tags: true,
 			bottom: 0,
-			height: 1,
+			height: this.hintBoxHeight,
 			content: ''
 		});
 		this.screen.append(this.bottomHintBox);
@@ -178,7 +198,7 @@ class ConsoleUI {
 		});
 		this.mainOuterBox.append(this.mainPane);
 
-		this.screen.key([ 'escape', 'q', 'C-c' ], function(ch, key) {
+		this.screen.key([ 'escape', 'C-c' ], function(ch, key) {
 			process.exit(0);
 		});
 
@@ -188,22 +208,161 @@ class ConsoleUI {
 
 		this.screen.render();
 
-		this.addHints([ ['q', 'Quit'] ]);
+		this.addHints([ ['Esc', 'Quit'] ]);
 	}
 
 	async initClient() {
 		console.log('Connecting ...');
 		this.client = new SimpleCNCClient(this.config);
-		await this.client.op('getStatus');
+		return await this.client.op('getStatus');
+	}
+
+	setupPrimaryStatusBoxes() {
+		this.machineStateStatusBox = this.addStatusBox('Machine', { state: 'NOT READY', paused: null, error: null }, { state: 'State', paused: 'Pause', error: 'Err' });
+		let posStatusInitial = {};
+		let posStatusLabels = {};
+		for (let i = 0; i < this.usedAxes.length; i++) {
+			if (this.usedAxes[i]) {
+				posStatusInitial[this.axisLabels[i]] = null;
+				posStatusLabels[this.axisLabels[i]] = this.axisLabels[i].toUpperCase();
+			}
+		}
+		this.positionStatusBox = this.addStatusBox('Pos Cur/Mach', posStatusInitial, posStatusLabels);
+		this.miscStateStatusBox = this.addStatusBox('State', {
+			activeCoordSys: null,
+			allAxisHomed: null,
+			units: null,
+			feed: null,
+			incremental: null,
+			moving: null,
+			spindle: null,
+			coolant: null
+		}, {
+			moving: 'Moving',
+			activeCoordSys: 'Coord',
+			incremental: 'Inc',
+			spindle: 'Spind',
+			coolant: 'Cool',
+			feed: 'Feed',
+			units: 'Unit',
+			allAxisHomed: 'Homed'
+		});
+	}
+
+	updatePrimaryStatusBoxes(status) {
+		// Machine state
+		let machineState = null;
+		let machineError = null;
+		if (status.error) {
+			machineState = '{red-bg}ERROR{/red-bg}';
+			machineError = JSON.stringify(status.errorData);
+		} else if (status.ready) {
+			machineState = '{green-bg}READY{/green-bg}';
+		} else {
+			machineState = '{red-bg}NOT READY{/red-bg}';
+		}
+		this.machineStateStatusBox.data.state = machineState;
+		this.machineStateStatusBox.data.error = machineError;
+		this.machineStateStatusBox.data.paused = status.paused ? '{red-bg}YES{/red-bg}' : 'NO';
+
+		// Position
+		const posPrecision = 3;
+		for (let i = 0; i < this.usedAxes.length; i++) {
+			if (this.usedAxes[i]) {
+				let axis = this.axisLabels[i];
+				let posStr = '';
+				if (status.pos && typeof status.pos[i] === 'number') {
+					posStr += status.pos[i].toFixed(posPrecision);
+				}
+				if (status.mpos && typeof status.mpos[i] === 'number') {
+					posStr += '{gray-fg}/' + status.mpos[i].toFixed(posPrecision) + '{/gray-fg}';
+				}
+				this.positionStatusBox.data[axis] = posStr;
+			}
+		}
+
+		// Misc
+		this.miscStateStatusBox.data.activeCoordSys = (typeof status.activeCoordSys === 'number') ? ('G' + (status.activeCoordSys + 54)) : '';
+		if (status.homed) {
+			this.miscStateStatusBox.data.allAxisHomed = '{green-fg}YES{/green-fg}';
+			for (let i = 0; i < this.usedAxes.length; i++) {
+				if (this.usedAxes[i] && !status.homed[i]) {
+					this.miscStateStatusBox.data.allAxisHomed = 'NO';
+				}
+			}
+		} else {
+			this.miscStateStatusBox.data.allAxisHomed = '';
+		}
+		this.miscStateStatusBox.data.units = status.units;
+		this.miscStateStatusBox.data.feed = (typeof status.feed === 'number') ? status.feed.toFixed(posPrecision) : '';
+		const boolstr = (val, iftrue = '{yellow-fg}YES{/yellow-fg}', iffalse = 'NO') => {
+			if (val) return iftrue;
+			if (val === null || val === undefined || val === '') return '';
+			return iffalse;
+		};
+		this.miscStateStatusBox.data.incremental = boolstr(status.incremental);
+		this.miscStateStatusBox.data.moving = boolstr(status.moving);
+		let spindleStr = '';
+		if (status.spindle === true && status.spindleDirection === 1) {
+			spindleStr = '{yellow-fg}FWD{/yellow-fg}';
+		} else if (status.spindle === true && status.spindleDirection === -1) {
+			spindleStr = '{yellow-fg}REV{/yellow-fg}';
+		} else if (status.spindle === true) {
+			spindleStr = '{yellow-fg}ON{/yellow-fg}';
+		} else if (status.spindle === false) {
+			spindleStr = 'OFF';
+		}
+		this.miscStateStatusBox.data.spindle = spindleStr;
+		this.miscStateStatusBox.data.coolant = boolstr(status.coolant, '{yellow-fg}ON{/yellow-fg}', 'OFF');
+
+		this.updateStatusBoxes();
+	}
+
+	setMessage(msg) {
+		this.messageBox.setContent(msg);
+		this.screen.render();
+	}
+
+	showTempMessage(msg, time = 6) {
+		this.setMessage(msg);
+		if (this.curTempMessageTimeout) clearTimeout(this.curTempMessageTimeout);
+		this.curTempMessageTimeout = setTimeout(() => {
+			delete this.curTempMessageTimeout;
+			this.setMessage('');
+		}, time * 1000);
+	}
+
+	clientError(err) {
+		this.showTempMessage(err.message || ('' + err));
+	}
+
+	runStatusUpdateLoop() {
+		const updateInterval = 500;
+		const runLoop = async() => {
+			while (true) {
+				await pasync.setTimeout(updateInterval);
+				let status;
+				try {
+					status = await this.client.op('getStatus');
+				} catch (err) {
+					this.clientError(err);
+				}
+				this.updatePrimaryStatusBoxes(status);
+			}
+		};
+		runLoop().catch(this.clientError.bind(this));
 	}
 
 	async run() {
-		await this.initClient();
+		let initStatus = await this.initClient();
+		this.axisLabels = initStatus.axisLabels;
+		this.usedAxes = initStatus.usedAxes;
 
 		this.initUI();
-		this.addStatusBox('Foo Title', { 'a': 1, 'b': 2, 'c': 3 });
+		this.setupPrimaryStatusBoxes();
+		this.updatePrimaryStatusBoxes(initStatus);
+		this.runStatusUpdateLoop();
 
-		this.addStatusBox('Foo2 Title', { 'a': 1, 'b': 2, 'c': 3 });
 		this.addHints(['q=quit', 'a=a', 'b=b', 'c=c']);
 	}
 
