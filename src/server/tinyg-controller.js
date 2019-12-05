@@ -94,7 +94,7 @@ class TinyGController extends Controller {
 			};
 			const onSerialClose = () => {
 				// Note that this isn't called during intended closures via this.close(), since this.close() first removes all handlers
-				err = new XError(XError.COMM_ERROR, 'Serial port closed unexpectedly');
+				let err = new XError(XError.COMM_ERROR, 'Serial port closed unexpectedly');
 				if (!this._initializing) this.emit('error', err);
 				this.close(err);
 				this._retryConnect();
@@ -145,7 +145,7 @@ class TinyGController extends Controller {
 
 		doInit()
 			.catch((err) => {
-				this.emit('error', 'Error initializing connection', err);
+				this.emit('error', new XError(XError.COMM_ERROR, 'Error initializing connection', err));
 				this.close(err);
 				this._initializing = false;
 				this._retryConnect();
