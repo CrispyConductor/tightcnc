@@ -38,10 +38,15 @@ class OpManager {
 	 * @method init
 	 */
 	async init() {
-		let controllerClass = this.controllerClasses[this.config.controller];
-		let controllerConfig = this.config.controllers[this.config.controller];
-		this.controller = new controllerClass(controllerConfig);
-		await this.controller.initConnection(true);
+		if (this.config.controller) {
+			let controllerClass = this.controllerClasses[this.config.controller];
+			let controllerConfig = this.config.controllers[this.config.controller];
+			this.controller = new controllerClass(controllerConfig);
+			await this.controller.initConnection(true);
+		} else {
+			console.log('WARNING: Initializing without a controller enabled.  For testing only.');
+			this.controller = {};
+		}
 		for (let opname in this.operations) {
 			await this.operations[opname].init();
 		}
