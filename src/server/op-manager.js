@@ -42,7 +42,11 @@ class OpManager {
 			let controllerClass = this.controllerClasses[this.config.controller];
 			let controllerConfig = this.config.controllers[this.config.controller];
 			this.controller = new controllerClass(controllerConfig);
-			await this.controller.initConnection(true);
+			controller.on('error', (err) => {
+				console.error('Controller error: ', err);
+				console.error(err.stack);
+			});
+			this.controller.initConnection(true);
 		} else {
 			console.log('WARNING: Initializing without a controller enabled.  For testing only.');
 			this.controller = {};
