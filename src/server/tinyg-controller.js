@@ -164,6 +164,7 @@ class TinyGController extends Controller {
 				this.serial.removeListener(key, this._serialListeners[key]);
 			}
 			this._serialListeners = [];
+			this.serial.on('error', () => {}); // swallow errors on this port that we're discarding
 			try { this.serial.close(); } catch (err2) {}
 			delete this.serial;
 		}

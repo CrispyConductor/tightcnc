@@ -1,4 +1,5 @@
 const XError = require('xerror');
+const objtools = require('objtools');
 
 /**
  * This is the central class for the application server.  Operations, gcode processors, and controllers
@@ -38,13 +39,23 @@ class OpManager {
 	 * @method init
 	 */
 	async init() {
+		const suppressDuplicateErrors = this.config.suppressDuplicateErrors === undefined ? true : this.config.suppressDuplicateErrors;
 		if (this.config.controller) {
 			let controllerClass = this.controllerClasses[this.config.controller];
 			let controllerConfig = this.config.controllers[this.config.controller];
 			this.controller = new controllerClass(controllerConfig);
-			controller.on('error', (err) => {
+			let lastError = null; // used to suppress duplicate error messages on repeated connection retries
+			this.controller.on('error', (err) => {
+				let errrep = err.toObject ? err.toObject() : err.toString;
+				if (objtools.deepEquals(errrep, lastError) && suppressDuplicateErrors) return;
+				lastError = errrep;
 				console.error('Controller error: ', err);
-				console.error(err.stack);
+				if (err.toObject) console.error(err.toObject());
+				if (err.stack) console.error(err.stack);
+			});
+			this.controller.on('ready', () => {
+				lastError = null;
+				console.log('Controller ready.');
 			});
 			this.controller.initConnection(true);
 		} else {
