@@ -9,20 +9,29 @@ class ConsoleUI {
 		this.hints = [];
 		this.config = require('littleconf').getConfig();
 		this.hintBoxHeight = 2;
+		this.modes = [];
 	}
 
-	addHints(hints) {
-		for (let i = 0; i < hints.length; i++) {
-			if (Array.isArray(hints[i])) {
-				hints[i] = '{inverse}' + hints[i][0] + '{/inverse} ' + hints[i][1];
-			}
+	registerGlobalKey(keys, keyNames, keyLabel, fn) {
+		if (!Array.isArray(keys)) keys = [ keys ];
+		if (keyNames && !Array.isArray(keyNames)) keyNames = [ keyNames ];
+		let hint = null;
+		if (keyNames) {
+			hint = this.addHint(keyNames, keyLabel);
 		}
-		this.hints.push(...hints);
-		this.updateHintBox();
+		this.screen.key(keys, fn);
+		return hint;
 	}
 
-	removeHints(hints) {
-		this.hints = this.hints.filter((h) => hints.indexOf(h) === -1);
+	addHint(keyNames, label) {
+		if (!Array.isArray(keyNames)) keyNames = [ keyNames ];
+		this.hints.push(keyNames.map((n) => '{inverse}' + n + '{/inverse}').join('/') + ' ' + label);
+		this.updateHintBox();
+		return this.hints[this.hints.length - 1];
+	}
+
+	removeHint(hint) {
+		this.hints = this.hints.filter((h) => h !== hint);
 		this.updateHintBox();
 	}
 
@@ -198,17 +207,27 @@ class ConsoleUI {
 		});
 		this.mainOuterBox.append(this.mainPane);
 
-		this.screen.key([ 'escape', 'C-c' ], function(ch, key) {
-			process.exit(0);
-		});
-
 		this.screen.on('resize', () => {
 			this.updateHintBox();
 		});
 
+
+		/*let testBox = blessed.box({
+			width: '100%',
+			height: '100%',
+			content: '',
+			input: true
+		});
+		testBox.key([ 'f', 'Esc' ], (ch, key) => {
+			testBox.setContent('key pressed\n' + ch + '\n' + JSON.stringify(key));
+			this.screen.render();
+		});
+		this.mainPane.append(testBox);
+		testBox.focus();*/
+
 		this.screen.render();
 
-		this.addHints([ ['Esc', 'Quit'] ]);
+		//this.registerGlobalKey([ 'escape', 'C-c' ], [ 'Esc' ], 'Exit', () => process.exit(0));
 	}
 
 	async initClient() {
@@ -255,8 +274,8 @@ class ConsoleUI {
 		let machineError = null;
 		if (status.error) {
 			machineState = '{red-bg}ERROR{/red-bg}';
-			if (status.errorData && status.errorData.message) {
-				machineError = status.errorData.message;
+			if (status.errorData && (status.errorData.message || status.errorData.msg)) {
+				machineError = status.errorData.message || status.errorData.msg;
 			} else if (status.errorData) {
 				machineError = JSON.stringify(status.errorData);
 			} else {
@@ -339,17 +358,19 @@ class ConsoleUI {
 	}
 
 	clientError(err) {
-		this.showTempMessage(err.message || ('' + err));
+		this.showTempMessage(err.message || err.msg || ('' + err));
+		console.log(err, err.stack);
 	}
 
 	runStatusUpdateLoop() {
-		const updateInterval = 500;
+		const updateInterval = 250;
 		const runLoop = async() => {
 			while (true) {
 				await pasync.setTimeout(updateInterval);
 				let status;
 				try {
 					status = await this.client.op('getStatus');
+					this.lastStatus = status;
 				} catch (err) {
 					this.clientError(err);
 				}
@@ -359,17 +380,53 @@ class ConsoleUI {
 		runLoop().catch(this.clientError.bind(this));
 	}
 
+	registerMode(name, m) {
+		this.modes[name] = m;
+	}
+
+	activateMode(name) {
+		if (this.activeMode) {
+			this.modes[this.activeMode].exitMode();
+		}
+		this.modes[name].activateMode();
+		this.activeMode = name;
+		this.screen.render();
+	}
+
+	exitMode() {
+		this.modes[this.activeMode].exitMode();
+		this.activeMode = null;
+		this.activateMode('home');
+		this.screen.render();
+	}
+
+	async registerModules() {
+		require('./mode-home').registerConsoleUI(this);
+		require('./mode-control').registerConsoleUI(this);
+
+		for (let mname in this.modes) {
+			await this.modes[mname].init();
+		}
+	}
+
+	registerHomeKey(keys, keyNames, keyLabel, fn) {
+		this.modes['home'].registerHomeKey(keys, keyNames, keyLabel, fn);
+	}
+
 	async run() {
 		let initStatus = await this.initClient();
+		this.lastStatus = initStatus;
 		this.axisLabels = initStatus.axisLabels;
 		this.usedAxes = initStatus.usedAxes;
 
 		this.initUI();
+		await this.registerModules();
+
 		this.setupPrimaryStatusBoxes();
 		this.updatePrimaryStatusBoxes(initStatus);
 		this.runStatusUpdateLoop();
 
-		this.addHints(['q=quit', 'a=a', 'b=b', 'c=c']);
+		this.activateMode('home');
 	}
 
 }

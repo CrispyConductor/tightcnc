@@ -118,6 +118,7 @@ class OpRealTimeMove extends Operation {
 		};
 	}
 	run(params) {
+		this.checkReady();
 		this.opmanager.controller.realTimeMove(params.axis, params.inc);
 	}
 }
@@ -138,6 +139,7 @@ class OpMove extends Operation {
 		};
 	}
 	async run(params) {
+		this.checkReady();
 		await this.opmanager.controller.move(params.pos, params.feed);
 	}
 }
@@ -153,6 +155,7 @@ class OpHome extends Operation {
 		};
 	}
 	async run(params) {
+		this.checkReady();
 		await this.opmanager.controller.home(params.axes);
 	}
 }
@@ -173,6 +176,7 @@ class OpProbe extends Operation {
 		};
 	}
 	async run(params) {
+		this.checkReady();
 		return await this.opmanager.controller.probe(params.pos, params.feed);
 	}
 }

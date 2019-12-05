@@ -205,6 +205,7 @@ class TinyGController extends Controller {
 
 	// Immediately send a line to the device, bypassing the send queue
 	_sendImmediate(line, responseWaiter = null) {
+		if (!this.serial) throw new XError(XError.COMM_ERROR, 'Not connected');
 		if (typeof line !== 'string') line = JSON.stringify(line);
 		line = line.trim();
 		// Check if should decrement linesToSend (if not !, %, etc)
@@ -236,6 +237,7 @@ class TinyGController extends Controller {
 
 	// Push a line onto the send queue to be sent when buffer space is available
 	send(line) {
+		if (!this.serial) throw new XError(XError.COMM_ERROR, 'Not connected');
 		this.sendQueue.push(line);
 		this.responseWaiterQueue.push(null);
 		this._doSend();

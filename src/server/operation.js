@@ -1,3 +1,5 @@
+const XError = require('xerror');
+
 /**
  * Base class for an operation that can be performed.  Operations pretty much map
  * one-to-one to API calls.
@@ -35,6 +37,12 @@ class Operation {
 	 * @return {Object|Schema}
 	 */
 	getParamSchema() {}
+
+	checkReady() {
+		if (!this.opmanager.controller || !this.opmanager.controller.ready) {
+			throw new XError(XError.BAD_REQUEST, 'Controller not ready');
+		}
+	}
 
 }
 
