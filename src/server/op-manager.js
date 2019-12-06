@@ -1,6 +1,7 @@
 const XError = require('xerror');
 const objtools = require('objtools');
 const LoggerDisk = require('./logger-disk');
+const LoggerMem = require('./logger-mem');
 
 /**
  * This is the central class for the application server.  Operations, gcode processors, and controllers
@@ -43,6 +44,8 @@ class OpManager {
 		const suppressDuplicateErrors = this.config.suppressDuplicateErrors === undefined ? true : this.config.suppressDuplicateErrors;
 		this.loggerDisk = new LoggerDisk(this.config.logger);
 		await this.loggerDisk.init();
+		this.loggerMem = new LoggerMem(this.config.loggerMem || {});
+		this.loggerMem.log('other', 'Server started.');
 		this.loggerDisk.log('other', 'Server started.');
 		if (this.config.controller) {
 			let controllerClass = this.controllerClasses[this.config.controller];
@@ -61,8 +64,14 @@ class OpManager {
 				lastError = null;
 				console.log('Controller ready.');
 			});
-			this.controller.on('sent', (line) => this.loggerDisk.log('send', line));
-			this.controller.on('received', (line) => this.loggerDisk.log('receive', line));
+			this.controller.on('sent', (line) => {
+				this.loggerMem.log('send', line);
+				this.loggerDisk.log('send', line);
+			});
+			this.controller.on('received', (line) => {
+				this.loggerMem.log('receive', line);
+				this.loggerDisk.log('receive', line);
+			});
 			this.controller.initConnection(true);
 		} else {
 			console.log('WARNING: Initializing without a controller enabled.  For testing only.');

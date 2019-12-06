@@ -282,6 +282,24 @@ class OpWaitSync extends Operation {
 	}
 }
 
+class OpGetLog extends Operation {
+	getParamSchema() {
+		return {
+			start: {
+				type: Number,
+				description: 'Starting line to fetch.'
+			},
+			end: {
+				type: Number,
+				description: 'Ending line to fetch.'
+			}
+		};
+	}
+	async run(params) {
+		return this.opmanager.loggerMem.section(params.start, params.end);
+	}
+}
+
 function registerOperations(opmanager) {
 	opmanager.registerOperation('getStatus', OpGetStatus);
 	opmanager.registerOperation('send', OpSend);
