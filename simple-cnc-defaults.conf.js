@@ -15,6 +15,114 @@ module.exports = {
 		}
 	},
 	operations: {
+	},
+	consoleui: {
+		control: {
+			keybinds: {
+				'exitMode': {
+					keys: [ 'escape' ],
+					keyNames: [ 'Esc' ],
+					label: 'Home',
+					action: {
+						exitMode: true
+					}
+				},
+				'x-': {
+					keys: [ 'a', 'left' ],
+					keyNames: [ 'Left', 'a' ],
+					label: 'X-',
+					action: {
+						realTimeMove: {
+							mult: -1,
+							axis: 0
+						}
+					}
+				},
+				'x+': {
+					keys: [ 'd', 'right' ],
+					keyNames: [ 'Right', 'd' ],
+					label: 'X+',
+					action: {
+						realTimeMove: {
+							mult: 1,
+							axis: 0
+						}
+					}
+				},
+				'y-': {
+					keys: [ 's', 'down' ],
+					keyNames: [ 'Down', 's' ],
+					label: 'Y-',
+					action: {
+						realTimeMove: {
+							mult: -1,
+							axis: 1
+						}
+					}
+				},
+				'y+': {
+					keys: [ 'w', 'up' ],
+					keyNames: [ 'Up', 'w' ],
+					label: 'Y+',
+					action: {
+						realTimeMove: {
+							mult: 1,
+							axis: 1
+						}
+					}
+				},
+				'z-': {
+					keys: [ 'f', 'pagedown' ],
+					keyNames: [ 'PgDn', 'f' ],
+					label: 'Z-',
+					action: {
+						realTimeMove: {
+							mult: -1,
+							axis: 2
+						}
+					}
+				},
+				'z+': {
+					keys: [ 'r', 'pageup' ],
+					keyNames: [ 'PgUp', 'r' ],
+					label: 'Z+',
+					action: {
+						realTimeMove: {
+							mult: 1,
+							axis: 2
+						}
+					}
+				},
+				'inc-': {
+					keys: [ '-' ],
+					keyNames: [ '-' ],
+					label: [ 'Inc-' ],
+					action: {
+						inc: {
+							mult: 0.1
+						}
+					}
+				},
+				'inc+': {
+					keys: [ '+', '=' ],
+					keyNames: [ '+' ],
+					label: [ 'Inc+' ],
+					action: {
+						inc: {
+							mult: 10
+						}
+					}
+				},
+				'setOrigin': {
+					keys: [ 'o' ],
+					keyNames: [ 'o' ],
+					label: 'Set Origin',
+					action: {
+						setOrigin: true
+					}
+				}
+			}
+		}
 	}
 };
 

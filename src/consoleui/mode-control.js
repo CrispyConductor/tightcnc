@@ -5,7 +5,44 @@ class ModeControl extends ConsoleUIMode {
 
 	constructor(consoleui) {
 		super(consoleui);
+		this.keybinds = consoleui.config.consoleui.control.keybinds;
 		this.moveIncrement = 1;
+	}
+
+	async _executeKeybind(action) {
+		if (Array.isArray(action)) {
+			for (let el of action) await this._executeKeybind(action);
+			return;
+		}
+
+		for (let key in action) {
+			let params = action[key];
+			switch (key) {
+				case 'exitMode':
+					this.consoleui.exitMode();
+					break;
+				case 'realTimeMove':
+					await this.consoleui.client.op('realTimeMove', { axis: params.axis, inc: params.mult * this.moveIncrement });
+					break;
+				case 'inc':
+					let newInc = this.moveIncrement * params.mult;
+					if (newInc > 1000 || newInc < 0.0001) break;
+					this.moveIncrement = +newInc.toFixed(4);
+					this._refreshText();
+					break;
+				case 'setOrigin':
+					await this.consoleui.client.op('setOrigin', {});
+					this.consoleui.showTempMessage('Origin set.');
+					break;
+				default:
+					throw new Error('Unknown keybind action ' + key);
+			}
+		}
+	}
+
+	_refreshText() {
+		this._centerTextBox.setContent('Machine Control\nMove Increment: ' + this.moveIncrement + ' ' + (this.consoleui.lastStatus.units || ''));
+		this.consoleui.screen.render();
 	}
 
 	init() {
@@ -18,54 +55,23 @@ class ModeControl extends ConsoleUIMode {
 			align: 'center'
 		});
 		this.box.append(text);
+		this._centerTextBox = text;
 		this.consoleui.registerHomeKey([ 'c', 'C' ], 'c', 'Control Mode', () => this.consoleui.activateMode('control'));
-		this.registerModeKey('escape', 'Esc', 'Home', () => this.consoleui.exitMode());
 
 		const handleError = (err) => this.consoleui.clientError(err);
-		const refreshText = () => {
-			text.setContent('Machine Control\nMove Increment: ' + this.moveIncrement + ' ' + (this.consoleui.lastStatus.units || ''));
-			this.consoleui.screen.render();
+
+		this._refreshText();
+
+		// Register keybinds
+		const registerKeybind = (kb) => {
+			this.registerModeKey(kb.keys, kb.keyNames, kb.label, () => {
+				this._executeKeybind(kb.action)
+					.catch(handleError);
+			});
 		};
-
-		refreshText();
-
-		this.registerModeKey([ 'left', 'a', 'A' ], [ 'Left', 'a' ], 'X-', () => {
-			this.consoleui.client.op('realTimeMove', { axis: 0, inc: -this.moveIncrement }).catch(handleError);
-		});
-
-		this.registerModeKey([ 'right', 'd', 'D' ], [ 'Right', 'd' ], 'X+', () => {
-			this.consoleui.client.op('realTimeMove', { axis: 0, inc: this.moveIncrement }).catch(handleError);
-		});
-
-		this.registerModeKey([ 'down', 's', 'S' ], [ 'Down', 's' ], 'Y-', () => {
-			this.consoleui.client.op('realTimeMove', { axis: 1, inc: -this.moveIncrement }).catch(handleError);
-		});
-
-		this.registerModeKey([ 'up', 'w', 'W' ], [ 'Up', 'w' ], 'Y+', () => {
-			this.consoleui.client.op('realTimeMove', { axis: 1, inc: this.moveIncrement }).catch(handleError);
-		});
-
-		this.registerModeKey([ 'pagedown', 'f', 'F' ], [ 'PgDn', 'f' ], 'Z-', () => {
-			this.consoleui.client.op('realTimeMove', { axis: 2, inc: -this.moveIncrement }).catch(handleError);
-		});
-
-		this.registerModeKey([ 'pageup', 'r', 'R' ], [ 'PgUp', 'r' ], 'Z+', () => {
-			this.consoleui.client.op('realTimeMove', { axis: 2, inc: this.moveIncrement }).catch(handleError);
-		});
-
-		this.registerModeKey([ '-' ], [ '-' ], 'Inc-', () => {
-			this.moveIncrement /= 10;
-			refreshText();
-		});
-
-		this.registerModeKey([ '+', '=' ], [ '+' ], 'Inc+', () => {
-			this.moveIncrement *= 10;
-			refreshText();
-		});
-
-		this.registerModeKey([ 'o', 'O' ], [ 'o' ], 'Set Origin', () => {
-			this.consoleui.client.op('setOrigin', {}).then(() => this.consoleui.showTempMessage('Origin set.'), handleError);
-		});
+		for (let key in this.keybinds) {
+			registerKeybind(this.keybinds[key]);
+		}
 
 	}
 
