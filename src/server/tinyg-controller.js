@@ -839,10 +839,10 @@ class TinyGController extends Controller {
 
 	realTimeMove(axisNum, inc) {
 		// Make sure there aren't too many requests in the queue
-		if (this._numInFlightRequests() > this.config.realTimeMovesMaxQueued || 8) return false;
+		if (this._numInFlightRequests() > (this.config.realTimeMovesMaxQueued || 8)) return false;
 		// Rate-limit real time move requests according to feed rate
-		let rtmTargetFeed = (this.axisMaxFeeds[axisNum] || 500) * 0.75; // target about 75% of max feed rate
-		let counterDecrement = (new Date().getTime() - this.realTimeMovesTimeStart[axisNum]) * rtmTargetFeed / 60;
+		let rtmTargetFeed = (this.axisMaxFeeds[axisNum] || 500) * 0.9; // target about 90% of max feed rate
+		let counterDecrement = (new Date().getTime() - this.realTimeMovesTimeStart[axisNum]) / 1000 * rtmTargetFeed / 60;
 		this.realTimeMovesCounter[axisNum] -= counterDecrement;
 		if (this.realTimeMovesCounter[axisNum] < 0) {
 			this.realTimeMovesCounter[axisNum] = 0;
