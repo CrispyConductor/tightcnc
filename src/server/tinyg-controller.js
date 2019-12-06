@@ -32,6 +32,7 @@ class TinyGController extends Controller {
 		this.responseWaiters = []; // pasync waiters for lines currently "in flight" (sent and waiting for response)
 		this.axisLabels = [ 'x', 'y', 'z', 'a', 'b', 'c' ];
 		this.usedAxes = config.usedAxes || [ true, true, true, false, false, false ];
+		this.axisMaxFeeds = [ 500, 500, 500, 500, 500, 500 ]; // initial values, set later during initialization
 
 		this._waitingForSync = false; // disable sending additional commands while waiting for synchronization
 		this._disableSending = false; // flag to disable sending data using normal channels (_sendImmediate still works)
@@ -40,7 +41,8 @@ class TinyGController extends Controller {
 		this.plannerQueueSize = 0; // Total size of planner queue
 		this.plannerQueueFree = 0; // Number of buffers in the tinyg planner queue currently open
 
-		this.realTimeMovesQueued = [ 0, 0, 0, 0, 0, 0 ]; // how many real time moves are in flight for each axis
+		this.realTimeMovesTimeStart = [ 0, 0, 0, 0, 0, 0 ];
+		this.realTimeMovesCounter = [ 0, 0, 0, 0, 0, 0 ];
 
 		this._serialListeners = {}; // mapping from serial port event names to listener functions; used to remove listeners during cleanup
 	}
@@ -174,6 +176,10 @@ class TinyGController extends Controller {
 	_retryConnect() {
 		if (!this._retryConnectFlag) return;
 		setTimeout(() => this.initConnection(true), 5000);
+	}
+
+	_numInFlightRequests() {
+		return this.responseWaiters.length;
 	}
 
 	// Send as many lines as we can from the send queue
@@ -679,13 +685,23 @@ class TinyGController extends Controller {
 		await this._fetchStatus(null, false);
 		// Set the planner queue size to the number of free entries (it's currently empty)
 		this.plannerQueueSize = this.plannerQueueFree;
+		// Fetch axis maximum velocities
+		for (let axisNum = 0; axisNum < this.usedAxes.length; axisNum++) {
+			if (this.usedAxes[axisNum]) {
+				let axis = this.axisLabels[axisNum];
+				let response = await this.sendWait({ [axis + 'vm']: null });
+				if (typeof response[axis + 'vm'] === 'number') {
+					this.axisMaxFeeds[axisNum] = response[axis + 'vm'];
+				}
+			}
+		}
 	}
 
 	_resetSerialState() {
 		this.sendQueue = [];
 		this.responseWaiterQueue = [];
 		this.responseWaiters = [];
-		this.linesToSend = 4;
+		this.linesToSend = 6; // note: tinyg docs recommend 4, with a max of 8; 6 is used here for slightly better performance with lots of short moves
 		this._waitingForSync = false;
 		this._disableSending = false;
 	}
@@ -822,19 +838,24 @@ class TinyGController extends Controller {
 	}
 
 	realTimeMove(axisNum, inc) {
-		let numQueued = this.realTimeMovesQueued[axisNum];
-		let maxQueued = this.config.maxRealTimeMovesQueued || 5;
-		if (numQueued >= maxQueued) return;
-		this.realTimeMovesQueued[axisNum]++;
+		// Make sure there aren't too many requests in the queue
+		if (this._numInFlightRequests() > this.config.realTimeMovesMaxQueued || 8) return false;
+		// Rate-limit real time move requests according to feed rate
+		let rtmTargetFeed = (this.axisMaxFeeds[axisNum] || 500) * 0.75; // target about 75% of max feed rate
+		let counterDecrement = (new Date().getTime() - this.realTimeMovesTimeStart[axisNum]) * rtmTargetFeed / 60;
+		this.realTimeMovesCounter[axisNum] -= counterDecrement;
+		if (this.realTimeMovesCounter[axisNum] < 0) {
+			this.realTimeMovesCounter[axisNum] = 0;
+		}
+		this.realTimeMovesTimeStart[axisNum] = new Date().getTime();
+		let maxOvershoot = (this.config.realTimeMovesMaxOvershootFactor || 2) * Math.abs(inc);
+		if (this.realTimeMovesCounter[axisNum] > maxOvershoot) return false;
+		this.realTimeMovesCounter[axisNum] += Math.abs(inc);
+		// Send the move
 		this.send('G91');
 		let gcode = 'G0 ' + this.axisLabels[axisNum].toUpperCase() + inc;
 		this.send(gcode);
-		this.sendWait('G90')
-			.then(() => {
-				this.realTimeMovesQueued[axisNum]--;
-			}, () => {
-				this.realTimeMovesQueued[axisNum]--;
-			});
+		this.send('G90');
 	}
 
 	async probe(pos, feed = null) {
