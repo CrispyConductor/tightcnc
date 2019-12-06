@@ -16,12 +16,21 @@ class ModeControl extends ConsoleUIMode {
 			return;
 		}
 
-		const makeOnlyAxesFlags = () => {
+		const makeOnlyAxesFlags = (trueVal = true, falseVal = false, defVal = undefined) => {
 			let flags = undefined;
 			if (this.onlyAxes) {
 				flags = [];
-				for (let i = 0; i < this.consoleui.axisLabels.length; i++) flags[i] = false;
-				for (let axisNum of this.onlyAxes) flags[axisNum] = true;
+				for (let i = 0; i < this.consoleui.axisLabels.length; i++) flags[i] = falseVal;
+				for (let axisNum of this.onlyAxes) flags[axisNum] = trueVal;
+			} else if (defVal !== undefined) {
+				flags = [];
+				for (let i = 0; i < this.consoleui.usedAxes.length; i++) {
+					if (this.consoleui.usedAxes[i]) {
+						flags.push(defVal);
+					} else {
+						flags.push(falseVal);
+					}
+				}
 			}
 			this.onlyAxes = null;
 			this._refreshText();
@@ -73,7 +82,36 @@ class ModeControl extends ConsoleUIMode {
 					});
 					this.consoleui.showTempMessage('Machine home set.');
 					break;
-
+				case 'goOrigin':
+					await this.consoleui.client.op('move', {
+						pos: makeOnlyAxesFlags(0, null, 0)
+					});
+					break;
+				case 'probe':
+					await this.consoleui.client.op('waitSync', {});
+					let probePos = [];
+					for (let axisNum = 0; axisNum < this.opmanager.axisLabels.length; axisNum++) probePos.push(null);
+					probePos[params.axis] = this.consoleui.lastStatus.pos[params.axis] + params.mult * this.moveIncrement;
+					this.consoleui.showTempMessage('Probing ...');
+					let probeTripped = true;
+					try {
+						await this.consoleui.client.op('probe', {
+							pos: probePos,
+							feed: params.feed
+						});
+					} catch (err) {
+						if (err && err.code === 'probe_not_tripped') {
+							probeTripped = false;
+						} else {
+							throw err;
+						}
+					}
+					if (probeTripped) {
+						this.consoleui.showTempMessage('Probe successful.');
+					} else {
+						this.consoleui.showTempMessage('Probe not tripped.');
+					}
+					break;
 				default:
 					throw new Error('Unknown keybind action ' + key);
 			}

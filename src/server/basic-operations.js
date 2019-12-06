@@ -273,6 +273,15 @@ class OpSetOrigin extends Operation {
 	}
 }
 
+class OpWaitSync extends Operation {
+	getParamSchema() {
+		return {};
+	}
+	async run() {
+		await this.opmanager.controller.waitSync();
+	}
+}
+
 function registerOperations(opmanager) {
 	opmanager.registerOperation('getStatus', OpGetStatus);
 	opmanager.registerOperation('send', OpSend);
@@ -286,6 +295,7 @@ function registerOperations(opmanager) {
 	opmanager.registerOperation('setAbsolutePos', OpSetAbsolutePos);
 	opmanager.registerOperation('probe', OpProbe);
 	opmanager.registerOperation('setOrigin', OpSetOrigin);
+	opmanager.registerOperation('waitSync', OpWaitSync);
 }
 
 module.exports = registerOperations;

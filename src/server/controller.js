@@ -218,7 +218,7 @@ class Controller extends EventEmitter {
 	 * executed before the move completes.  (G0/G1)
 	 *
 	 * @method move
-	 * @param {Number[]} pos - Position to move to.  Array elements may be null to not move on that axis.
+	 * @param {Number[]} pos - Position to move to.  Array elements may be null/undefined to not move on that axis.
 	 * @param {Number} [feed] - Optional feed rate to move at.
 	 * @return {Promise} - Resolve when move is complete and machine is stopped.
 	 */
@@ -234,7 +234,8 @@ class Controller extends EventEmitter {
 	home(axes) {}
 
 	/**
-	 * Probe toward position.  Resolve when probe trips.  Error if probe reaches position without tripping.
+	 * Probe toward position.  Resolve when probe trips.  Error if probe reaches position without tripping.  This should return
+	 * the position that the probe tripped at, and also ensure that the machine is positioned at that location.
 	 *
 	 * @method probe
 	 * @param {Number[]} pos

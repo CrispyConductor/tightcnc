@@ -166,6 +166,26 @@ module.exports = {
 					action: {
 						setMachineHome: true
 					}
+				},
+				'goOrigin': {
+					keys: [ 'g' ],
+					keyNames: [ 'g' ],
+					label: 'GoTo Origin',
+					action: {
+						goOrigin: true
+					}
+				},
+				'probeZ': {
+					keys: [ 'p' ],
+					keyNames: [ 'p' ],
+					label: 'Probe Z',
+					action: {
+						probe: {
+							mult: -1,
+							axis: 2,
+							feed: 25
+						}
+					}
 				}
 			}
 		}
