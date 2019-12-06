@@ -16,6 +16,11 @@ module.exports = {
 	},
 	operations: {
 	},
+	logger: {
+		logDir: '/tmp/simplecnc-log',
+		maxFileSize: 1000000,
+		keepFiles: 2
+	},
 	consoleui: {
 		control: {
 			keybinds: {

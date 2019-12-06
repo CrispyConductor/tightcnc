@@ -8,7 +8,7 @@ class ConsoleUI {
 		this.statusBoxes = [];
 		this.hints = [];
 		this.config = require('littleconf').getConfig();
-		this.hintBoxHeight = 2;
+		this.hintBoxHeight = 3;
 		this.modes = [];
 		this.enableRendering = true;
 	}
