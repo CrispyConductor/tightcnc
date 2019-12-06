@@ -382,6 +382,8 @@ class ConsoleUI {
 				try {
 					status = await this.client.op('getStatus');
 					this.lastStatus = status;
+					this.axisLabels = status.axisLabels;
+					this.usedAxes = status.usedAxes;
 				} catch (err) {
 					this.clientError(err);
 				}

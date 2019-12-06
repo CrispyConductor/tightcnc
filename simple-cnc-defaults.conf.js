@@ -113,12 +113,50 @@ module.exports = {
 						}
 					}
 				},
+				'axisX': {
+					keys: [ 'x' ],
+					keyNames: [ 'x' ],
+					label: 'X Only',
+					action: {
+						onlyAxis: {
+							axis: 0
+						}
+					}
+				},
+				'axisY': {
+					keys: [ 'y' ],
+					keyNames: [ 'y' ],
+					label: 'Y Only',
+					action: {
+						onlyAxis: {
+							axis: 1
+						}
+					}
+				},
+				'axisZ': {
+					keys: [ 'z' ],
+					keyNames: [ 'z' ],
+					label: 'Z Only',
+					action: {
+						onlyAxis: {
+							axis: 2
+						}
+					}
+				},
 				'setOrigin': {
 					keys: [ 'o' ],
 					keyNames: [ 'o' ],
 					label: 'Set Origin',
 					action: {
 						setOrigin: true
+					}
+				},
+				'homeMachine': {
+					keys: [ 'h' ],
+					keyNames: [ 'h' ],
+					label: 'Home Mach.',
+					action: {
+						home: true
 					}
 				}
 			}

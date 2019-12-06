@@ -190,18 +190,29 @@ class OpSetOrigin extends Operation {
 			},
 			pos: {
 				type: 'array',
-				elements: Number,
-				description: 'Position offsets of new origin.  If null, current position is used.'
+				elements: {
+					type: 'or',
+					alternatives: [
+						{ type: Number },
+						{ type: Boolean }
+					]
+				},
+				description: 'Position offsets of new origin.  If null, current position is used.  Elements can also be true (to use current position for that axis) or false (to ignore that axis).'
 			}
 		};
 	}
 	async run(params) {
 		let pos = params.pos;
-		if (!pos || typeof params.coordSys !== 'number') {
+		let posHasBooleans = pos && pos.some((c) => typeof c === 'boolean');
+		if (!pos || posHasBooleans || typeof params.coordSys !== 'number') {
 			await this.opmanager.controller.waitSync();
 		}
 		if (!pos) {
 			pos = this.opmanager.controller.mpos;
+		} else {
+			for (let axisNum = 0; axisNum < pos.length; axisNum++) {
+				if (pos[axisNum] === true) pos[axisNum] = this.opmanager.controller.mpos[axisNum];
+			}
 		}
 		let coordSys = params.coordSys;
 		if (typeof params.coordSys !== 'number') {

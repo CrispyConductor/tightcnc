@@ -7,6 +7,7 @@ class ModeControl extends ConsoleUIMode {
 		super(consoleui);
 		this.keybinds = consoleui.config.consoleui.control.keybinds;
 		this.moveIncrement = 1;
+		this.onlyAxes = null;
 	}
 
 	async _executeKeybind(action) {
@@ -30,8 +31,28 @@ class ModeControl extends ConsoleUIMode {
 					this.moveIncrement = +newInc.toFixed(4);
 					this._refreshText();
 					break;
+				case 'onlyAxis':
+					if (!this.onlyAxes) this.onlyAxes = [];
+					if (this.onlyAxes.indexOf(params.axis) !== -1) {
+						this.onlyAxes = this.onlyAxes.filter((a) => a !== params.axis);
+					} else {
+						this.onlyAxes.push(params.axis);
+						this.onlyAxes.sort();
+					}
+					if (!this.onlyAxes.length) this.onlyAxes = null;
+					this._refreshText();
+					break;
 				case 'setOrigin':
-					await this.consoleui.client.op('setOrigin', {});
+					let axesToOrigin = undefined;
+					if (this.onlyAxes) {
+						axesToOrigin = [];
+						for (let i = 0; i < this.consoleui.axisLabels.length; i++) axesToOrigin[i] = false;
+						for (let axisNum of this.onlyAxes) axesToOrigin[axisNum] = true;
+					}
+					this.onlyAxes = null;
+					await this.consoleui.client.op('setOrigin', {
+						pos: axesToOrigin
+					});
 					this.consoleui.showTempMessage('Origin set.');
 					break;
 				default:
@@ -41,7 +62,12 @@ class ModeControl extends ConsoleUIMode {
 	}
 
 	_refreshText() {
-		this._centerTextBox.setContent('Machine Control\nMove Increment: ' + this.moveIncrement + ' ' + (this.consoleui.lastStatus.units || ''));
+		let content = '{bold}Machine Control{/bold}';
+		content += '\nMove Increment: ' + this.moveIncrement + ' ' + (this.consoleui.lastStatus.units || '');
+		if (this.onlyAxes) {
+			content += '\nNext command axes: ' + this.onlyAxes.map((axisNum) => this.consoleui.axisLabels[axisNum].toUpperCase()).join(', ');
+		}
+		this._centerTextBox.setContent(content);
 		this.consoleui.screen.render();
 	}
 
@@ -52,7 +78,8 @@ class ModeControl extends ConsoleUIMode {
 			width: '100%',
 			height: '100%',
 			content: '',
-			align: 'center'
+			align: 'center',
+			tags: true
 		});
 		this.box.append(text);
 		this._centerTextBox = text;
