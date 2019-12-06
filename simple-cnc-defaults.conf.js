@@ -186,6 +186,39 @@ module.exports = {
 							feed: 25
 						}
 					}
+				},
+				'hold': {
+					keys: [ ',', '<', '!' ],
+					keyNames: [ ',' ],
+					label: 'Feed Hold',
+					action: {
+						operation: {
+							name: 'hold',
+							params: {}
+						}
+					}
+				},
+				'resume': {
+					keys: [ '.', '>', '~' ],
+					keyNames: [ '.' ],
+					label: 'Resume',
+					action: {
+						operation: {
+							name: 'resume',
+							params: {}
+						}
+					}
+				},
+				'cancel': {
+					keys: [ '/', '?', '%' ],
+					keyNames: [ '/' ],
+					label: 'Cancel',
+					action: {
+						operation: {
+							name: 'cancel',
+							params: {}
+						}
+					}
 				}
 			}
 		}

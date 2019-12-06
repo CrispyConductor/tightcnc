@@ -90,7 +90,7 @@ class ModeControl extends ConsoleUIMode {
 				case 'probe':
 					await this.consoleui.client.op('waitSync', {});
 					let probePos = [];
-					for (let axisNum = 0; axisNum < this.opmanager.axisLabels.length; axisNum++) probePos.push(null);
+					for (let axisNum = 0; axisNum < this.consoleui.axisLabels.length; axisNum++) probePos.push(null);
 					probePos[params.axis] = this.consoleui.lastStatus.pos[params.axis] + params.mult * this.moveIncrement;
 					this.consoleui.showTempMessage('Probing ...');
 					let probeTripped = true;
@@ -111,6 +111,9 @@ class ModeControl extends ConsoleUIMode {
 					} else {
 						this.consoleui.showTempMessage('Probe not tripped.');
 					}
+					break;
+				case 'operation':
+					await this.consoleui.client.op(params.name, params.params);
 					break;
 				default:
 					throw new Error('Unknown keybind action ' + key);

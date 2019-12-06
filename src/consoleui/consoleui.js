@@ -10,6 +10,20 @@ class ConsoleUI {
 		this.config = require('littleconf').getConfig();
 		this.hintBoxHeight = 2;
 		this.modes = [];
+		this.enableRendering = true;
+	}
+
+	render() {
+		if (this.screen && this.enableRendering) this.screen.render();
+	}
+
+	disableRender() {
+		this.enableRendering = false;
+	}
+
+	enableRender() {
+		this.enableRendering = true;
+		this.render();
 	}
 
 	registerGlobalKey(keys, keyNames, keyLabel, fn) {
@@ -64,7 +78,7 @@ class ConsoleUI {
 			hintBoxContent += '{/center}';
 		}
 		this.bottomHintBox.setContent(hintBoxContent);
-		this.screen.render();
+		this.render();
 	}
 
 	/**
@@ -148,7 +162,7 @@ class ConsoleUI {
 			}
 			boxData.box.setContent(content);
 		}
-		this.screen.render();
+		this.render();
 	}
 
 	initUI() {
@@ -356,7 +370,7 @@ class ConsoleUI {
 
 	setMessage(msg) {
 		this.messageBox.setContent(msg);
-		this.screen.render();
+		this.render();
 	}
 
 	showTempMessage(msg, time = 6) {
@@ -398,19 +412,21 @@ class ConsoleUI {
 	}
 
 	activateMode(name) {
+		this.disableRender();
 		if (this.activeMode) {
 			this.modes[this.activeMode].exitMode();
 		}
 		this.modes[name].activateMode();
 		this.activeMode = name;
-		this.screen.render();
+		this.enableRender();
 	}
 
 	exitMode() {
+		this.disableRender();
 		this.modes[this.activeMode].exitMode();
 		this.activeMode = null;
 		this.activateMode('home');
-		this.screen.render();
+		this.enableRender();
 	}
 
 	async registerModules() {
