@@ -160,6 +160,50 @@ class OpHome extends Operation {
 	}
 }
 
+class OpSetAbsolutePos extends Operation {
+	getParamSchema() {
+		return {
+			pos: {
+				type: 'array',
+				elements: {
+					type: 'or',
+					alternatives: [
+						{ type: Number },
+						{ type: Boolean }
+					]
+				},
+				description: 'Positions of axes to set.  If null, 0 is used for all axes.  Elements can also be true (synonym for 0) or false (to ignore that axis).'
+			}
+		};
+	}
+	async run(params) {
+		let pos = params.pos;
+		await this.opmanager.controller.waitSync();
+		if (!pos) {
+			pos = [];
+			for (let axisNum = 0; axisNum < this.opmanager.controller.usedAxes.length; axisNum++) {
+				if (this.opmanager.controller.usedAxes[axisNum]) {
+					pos.push(0);
+				} else {
+					pos.push(false);
+				}
+			}
+		} else {
+			for (let axisNum = 0; axisNum < pos.length; axisNum++) {
+				if (pos[axisNum] === true) pos[axisNum] = 0;
+			}
+		}
+		let gcode = 'G28.3';
+		for (let axisNum of this.opmanager.controller.listUsedAxisNumbers()) {
+			let axis = this.opmanager.controller.axisLabels[axisNum].toUpperCase();
+			if (typeof pos[axisNum] === 'number') {
+				gcode += ' ' + axis + pos[axisNum];
+			}
+		}
+		await this.opmanager.controller.sendWait(gcode);
+	}
+}
+
 class OpProbe extends Operation {
 	getParamSchema() {
 		return {
@@ -239,6 +283,7 @@ function registerOperations(opmanager) {
 	opmanager.registerOperation('realTimeMove', OpRealTimeMove);
 	opmanager.registerOperation('move', OpMove);
 	opmanager.registerOperation('home', OpHome);
+	opmanager.registerOperation('setAbsolutePos', OpSetAbsolutePos);
 	opmanager.registerOperation('probe', OpProbe);
 	opmanager.registerOperation('setOrigin', OpSetOrigin);
 }

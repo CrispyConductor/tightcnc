@@ -16,6 +16,18 @@ class ModeControl extends ConsoleUIMode {
 			return;
 		}
 
+		const makeOnlyAxesFlags = () => {
+			let flags = undefined;
+			if (this.onlyAxes) {
+				flags = [];
+				for (let i = 0; i < this.consoleui.axisLabels.length; i++) flags[i] = false;
+				for (let axisNum of this.onlyAxes) flags[axisNum] = true;
+			}
+			this.onlyAxes = null;
+			this._refreshText();
+			return flags;
+		};
+
 		for (let key in action) {
 			let params = action[key];
 			switch (key) {
@@ -43,18 +55,25 @@ class ModeControl extends ConsoleUIMode {
 					this._refreshText();
 					break;
 				case 'setOrigin':
-					let axesToOrigin = undefined;
-					if (this.onlyAxes) {
-						axesToOrigin = [];
-						for (let i = 0; i < this.consoleui.axisLabels.length; i++) axesToOrigin[i] = false;
-						for (let axisNum of this.onlyAxes) axesToOrigin[axisNum] = true;
-					}
-					this.onlyAxes = null;
 					await this.consoleui.client.op('setOrigin', {
-						pos: axesToOrigin
+						pos: makeOnlyAxesFlags()
 					});
 					this.consoleui.showTempMessage('Origin set.');
 					break;
+				case 'home':
+					this.consoleui.showTempMessage('Homing ...');
+					await this.consoleui.client.op('home', {
+						axes: makeOnlyAxesFlags()
+					});
+					this.consoleui.showTempMessage('Homing complete.');
+					break;
+				case 'setMachineHome':
+					await this.consoleui.client.op('setAbsolutePos', {
+						pos: makeOnlyAxesFlags()
+					});
+					this.consoleui.showTempMessage('Machine home set.');
+					break;
+
 				default:
 					throw new Error('Unknown keybind action ' + key);
 			}

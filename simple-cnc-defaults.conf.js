@@ -158,6 +158,14 @@ module.exports = {
 					action: {
 						home: true
 					}
+				},
+				'setMachineHome': {
+					keys: [ 'm' ],
+					keyNames: [ 'm' ],
+					label: 'Set Mach. Home',
+					action: {
+						setMachineHome: true
+					}
 				}
 			}
 		}
