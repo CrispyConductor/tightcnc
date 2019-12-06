@@ -244,6 +244,24 @@ class Controller extends EventEmitter {
 	probe(pos, feed = null) {}
 
 
+	listUsedAxisNumbers() {
+		let ret = [];
+		for (let axisNum = 0; axisNum < this.usedAxes.length; axisNum++) {
+			if (this.usedAxes[axisNum]) ret.push(axisNum);
+		}
+		return ret;
+	}
+
+	listUsedAxisLabels() {
+		let ret = [];
+		for (let axisNum = 0; axisNum < this.usedAxes.length; axisNum++) {
+			if (this.usedAxes[axisNum]) {
+				ret.push(this.axisLabels[axisNum]);
+			}
+		}
+		return ret;
+	}
+
 }
 
 // Error code for serial port communication errors

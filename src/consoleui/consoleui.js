@@ -41,18 +41,29 @@ class ConsoleUI {
 			return;
 		}
 		let totalWidth = this.bottomHintBox.width;
-		let widthPerHint = totalWidth / this.hints.length;
-		let content = '';
-		for (let hint of this.hints) {
-			//if (hint.length > widthPerHint) hint = hint.slice(0, widthPerHint - 2); // this breaks with tags
-			let padLeft = Math.floor((widthPerHint - hint.length) / 2);
-			let padRight = Math.ceil((widthPerHint - hint.length) / 2);
-			for (let i = 0; i < padLeft; i++) content += ' ';
-			content += hint;
-			for (let i = 0; i < padRight; i++) content += ' ';
+		let rowHints = [];
+		let numRowsUsed = Math.min(Math.floor(this.hints.length / 6) + 1, this.hintBoxHeight);
+		let hintsPerRow = Math.ceil(this.hints.length / numRowsUsed);
+		let hintWidth = Math.floor(totalWidth / hintsPerRow);
+		let hintsToShow = [];
+		for (let i = 0; i < hintsPerRow * numRowsUsed; i++) {
+			hintsToShow[i] = this.hints[i] || '';
 		}
-
-		this.bottomHintBox.setContent('{center}' + content + '{/center}');
+		let hintBoxContent = '';
+		for (let rowNum = 0; rowNum < numRowsUsed; rowNum++) {
+			if (rowNum != 0) hintBoxContent += '\n';
+			hintBoxContent += '{center}';
+			for (let hintIdx = rowNum * hintsPerRow; hintIdx < (rowNum + 1) * hintsPerRow; hintIdx++) {
+				let hintStrLen = hintsToShow[hintIdx].replace(/\{[^}]*\}/g, '').length;
+				let padLeft = Math.floor((hintWidth - hintStrLen) / 2);
+				let padRight = Math.ceil((hintWidth - hintStrLen) / 2);
+				for (let i = 0; i < padLeft; i++) hintBoxContent += ' ';
+				hintBoxContent += hintsToShow[hintIdx];
+				for (let i = 0; i < padRight; i++) hintBoxContent += ' ';
+			}
+			hintBoxContent += '{/center}';
+		}
+		this.bottomHintBox.setContent(hintBoxContent);
 		this.screen.render();
 	}
 

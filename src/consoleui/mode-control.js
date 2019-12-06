@@ -33,7 +33,7 @@ class ModeControl extends ConsoleUIMode {
 			this.consoleui.client.op('realTimeMove', { axis: 0, inc: -this.moveIncrement }).catch(handleError);
 		});
 
-		this.registerModeKey([ 'right', 'd', 'D' ], [ 'Right', 'a' ], 'X+', () => {
+		this.registerModeKey([ 'right', 'd', 'D' ], [ 'Right', 'd' ], 'X+', () => {
 			this.consoleui.client.op('realTimeMove', { axis: 0, inc: this.moveIncrement }).catch(handleError);
 		});
 
@@ -61,6 +61,10 @@ class ModeControl extends ConsoleUIMode {
 		this.registerModeKey([ '+', '=' ], [ '+' ], 'Inc+', () => {
 			this.moveIncrement *= 10;
 			refreshText();
+		});
+
+		this.registerModeKey([ 'o', 'O' ], [ 'o' ], 'Set Origin', () => {
+			this.consoleui.client.op('setOrigin', {}).then(() => this.consoleui.showTempMessage('Origin set.'), handleError);
 		});
 
 	}

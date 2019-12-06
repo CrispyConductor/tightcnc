@@ -181,6 +181,43 @@ class OpProbe extends Operation {
 	}
 }
 
+class OpSetOrigin extends Operation {
+	getParamSchema() {
+		return {
+			coordSys: {
+				type: Number,
+				description: 'Coordinate system to set origin for; 0 = G54.  If null, current coord sys is used.'
+			},
+			pos: {
+				type: 'array',
+				elements: Number,
+				description: 'Position offsets of new origin.  If null, current position is used.'
+			}
+		};
+	}
+	async run(params) {
+		let pos = params.pos;
+		if (!pos || typeof params.coordSys !== 'number') {
+			await this.opmanager.controller.waitSync();
+		}
+		if (!pos) {
+			pos = this.opmanager.controller.mpos;
+		}
+		let coordSys = params.coordSys;
+		if (typeof params.coordSys !== 'number') {
+			coordSys = this.opmanager.controller.activeCoordSys || 0;
+		}
+		let gcode = 'G10 L2 P' + (coordSys + 1);
+		for (let axisNum of this.opmanager.controller.listUsedAxisNumbers()) {
+			let axis = this.opmanager.controller.axisLabels[axisNum].toUpperCase();
+			if (typeof pos[axisNum] === 'number') {
+				gcode += ' ' + axis + pos[axisNum];
+			}
+		}
+		await this.opmanager.controller.sendWait(gcode);
+	}
+}
+
 function registerOperations(opmanager) {
 	opmanager.registerOperation('getStatus', OpGetStatus);
 	opmanager.registerOperation('send', OpSend);
@@ -192,6 +229,7 @@ function registerOperations(opmanager) {
 	opmanager.registerOperation('move', OpMove);
 	opmanager.registerOperation('home', OpHome);
 	opmanager.registerOperation('probe', OpProbe);
+	opmanager.registerOperation('setOrigin', OpSetOrigin);
 }
 
 module.exports = registerOperations;
