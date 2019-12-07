@@ -115,6 +115,12 @@ class ModeControl extends ConsoleUIMode {
 				case 'operation':
 					await this.consoleui.client.op(params.name, params.params);
 					break;
+				case 'sendTextbox':
+					this.box.append(this.sendBoxBorder);
+					this.sendTextbox.focus();
+					this.consoleui.render();
+					break;
+
 				default:
 					throw new Error('Unknown keybind action ' + key);
 			}
@@ -142,6 +148,7 @@ class ModeControl extends ConsoleUIMode {
 			tags: true
 		});
 		this.box.append(text);
+		text.setIndex(10);
 		this._centerTextBox = text;
 		this.consoleui.registerHomeKey([ 'c', 'C' ], 'c', 'Control Mode', () => this.consoleui.activateMode('control'));
 
@@ -159,6 +166,44 @@ class ModeControl extends ConsoleUIMode {
 		for (let key in this.keybinds) {
 			registerKeybind(this.keybinds[key]);
 		}
+
+		this.sendBoxBorder = blessed.box({
+			top: '50%-2',
+			left: '25%',
+			width: '50%',
+			height: 3,
+			border: {
+				type: 'line'
+			}
+		});
+		this.sendTextbox = blessed.textbox({
+			inputOnFocus: true,
+			height: 1,
+			width: '100%'
+		});
+		this.sendBoxBorder.append(this.sendTextbox);
+		this.sendBoxBorder.setIndex(100);
+
+		this.sendTextbox.on('cancel', () => {
+			this.sendTextbox.clearValue();
+			this.box.remove(this.sendBoxBorder);
+		});
+
+		this.sendTextbox.on('submit', () => {
+			let line = this.sendTextbox.getValue();
+			this.sendTextbox.clearValue();
+			this.box.remove(this.sendBoxBorder);
+			this.consoleui.render();
+			if (line.trim()) {
+				this.consoleui.client.op('send', {
+					line: line
+				})
+					.then(() => {
+						this.consoleui.showTempMessage('Line sent.');
+					})
+					.catch(handleError);
+			}
+		});
 
 	}
 

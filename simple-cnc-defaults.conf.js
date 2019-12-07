@@ -229,6 +229,14 @@ module.exports = {
 							params: {}
 						}
 					}
+				},
+				'sendline': {
+					keys: [ 'enter' ],
+					keyNames: [ 'Enter' ],
+					label: 'Send Line',
+					action: {
+						sendTextbox: true
+					}
 				}
 			}
 		}

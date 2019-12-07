@@ -9,7 +9,7 @@ class ModeLog extends ConsoleUIMode {
 		this.modeActive = false;
 		this.logConfig = consoleui.config.consoleui.log;
 		this.lastLineNum = null;
-		this.logStr = 'LogStart';
+		this.logStr = '';
 	}
 
 	async updateLog() {
@@ -18,7 +18,7 @@ class ModeLog extends ConsoleUIMode {
 			end: null,
 			limit: this.logConfig.updateBatchLimit
 		});
-		if (!newEntries.length) return;
+		if (!newEntries.length) return false;
 		let firstLineNum = newEntries[0][0];
 		let lastLineNum = newEntries[newEntries.length - 1][0];
 		if (this.lastlineNum !== null && firstLineNum !== this.lastLineNum + 1) {
@@ -32,6 +32,13 @@ class ModeLog extends ConsoleUIMode {
 		if (this.logStr.length > this.logConfig.bufferMaxSize) {
 			this.logStr = this.logStr.slice(-this.logConfig.bufferMaxSize);
 		}
+		return true;
+	}
+
+	refreshLogDisplay() {
+		this.logBox.setContent(this.logStr);
+		if (this.logStr) this.logBox.setScrollPerc(100);
+		this.consoleui.render();
 	}
 
 	startLogUpdateLoop() {
@@ -41,10 +48,10 @@ class ModeLog extends ConsoleUIMode {
 			if (this.logUpdating) return;
 			this.logUpdating = true;
 			this.updateLog()
-				.then(() => {
+				.then((updated) => {
 					this.logUpdating = false;
-					if (this.modeActive) {
-						this.logBox.setContent(this.logStr);
+					if (this.modeActive && updated) {
+						this.refreshLogDisplay();
 					}
 				})
 				.catch((err) => {
@@ -58,6 +65,7 @@ class ModeLog extends ConsoleUIMode {
 		super.activateMode();
 		this.modeActive = true;
 		if (!this.updateLoopRunning) this.startLogUpdateLoop();
+		this.textbox.focus();
 	}
 
 	exitMode() {
@@ -69,13 +77,76 @@ class ModeLog extends ConsoleUIMode {
 		super.init();
 		this.logBox = blessed.box({
 			width: '100%',
-			height: '100%',
-			content: ''
+			height: '100%-2',
+			content: 'Foo\nBar\n',
+			scrollable: true,
+			scrollbar: {
+				ch: '#',
+				style: {
+					//fg: 'blue'
+				},
+				track: {
+					bg: 'gray'
+				}
+
+			},
+			style: {
+			}
 		});
 		this.box.append(this.logBox);
+		this.separatorLine = blessed.line({
+			type: 'line',
+			orientation: 'horizontal',
+			width: '100%',
+			bottom: 1
+		});
+		this.box.append(this.separatorLine);
+		
+		this.textbox = blessed.textbox({
+			inputOnFocus: true,
+			height: 1,
+			width: '100%',
+			bottom: 0
+		});
+		this.box.append(this.textbox);
+
+		const scrollUp = () => {
+			this.logBox.scroll(-Math.ceil(this.logBox.height / 3))
+			this.consoleui.render();
+		};
+
+		const scrollDown = () => {
+			this.logBox.scroll(Math.ceil(this.logBox.height / 3))
+			this.consoleui.render();
+		};
 
 		this.consoleui.registerHomeKey([ 'l', 'L' ], 'l', 'Log Mode', () => this.consoleui.activateMode('log'));
+		
 		this.registerModeKey([ 'escape' ], [ 'Esc' ], 'Home', () => this.consoleui.exitMode());
+		this.registerModeKey([ 'pageup' ], [ 'PgUp' ], 'Scroll Up', scrollUp);
+		this.registerModeKey([ 'pagedown' ], [ 'PgDn' ], 'Scroll Down', scrollDown);
+
+		this.registerModeHint([ '<Any>' ], 'Type');
+		this.registerModeHint([ 'Enter' ], 'Submit');
+
+		this.textbox.key([ 'escape' ], () => this.consoleui.exitMode());
+		this.textbox.key([ 'pageup' ], scrollUp);
+		this.textbox.key([ 'pagedown' ], scrollDown);
+
+		this.textbox.on('submit', () => {
+			let line = this.textbox.getValue();
+			this.textbox.clearValue();
+			this.textbox.focus();
+			this.consoleui.render();
+			if (line.trim()) {
+				this.consoleui.client.op('send', {
+					line: line
+				})
+					.catch((err) => {
+						this.consoleui.clientError(err);
+					});
+			}
+		});
 	}
 
 }
