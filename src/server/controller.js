@@ -80,6 +80,8 @@ class Controller extends EventEmitter {
 		this.axisLabels = [ 'x', 'y', 'z' ];
 		// Which axes are actually used
 		this.usedAxes = [ true, true, true ];
+		// Which axes can be automatically homed
+		this.homableAxes = [ true, true, true ];
 		// Current coordinates in machine position for each of the axes
 		this.mpos = [ 0, 0, 0 ];
 		// Currently active coordinate system.  0 corresponds to G54, 1 to G55, etc.  null means G53 machine coordinates.

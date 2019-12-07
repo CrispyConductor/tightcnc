@@ -32,6 +32,7 @@ class TinyGController extends Controller {
 		this.responseWaiters = []; // pasync waiters for lines currently "in flight" (sent and waiting for response)
 		this.axisLabels = [ 'x', 'y', 'z', 'a', 'b', 'c' ];
 		this.usedAxes = config.usedAxes || [ true, true, true, false, false, false ];
+		this.homableAxes = config.homableAxes || [ true, true, true ];
 		this.axisMaxFeeds = [ 500, 500, 500, 500, 500, 500 ]; // initial values, set later during initialization
 
 		this._waitingForSync = false; // disable sending additional commands while waiting for synchronization
@@ -815,7 +816,7 @@ class TinyGController extends Controller {
 	}
 
 	async home(axes = null) {
-		if (!axes) axes = this.usedAxes;
+		if (!axes) axes = this.homableAxes;
 		let gcode = 'G28.2';
 		for (let axisNum = 0; axisNum < axes.length; axisNum++) {
 			if (axes[axisNum]) {
