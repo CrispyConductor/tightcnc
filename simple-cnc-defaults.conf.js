@@ -22,6 +22,11 @@ module.exports = {
 		keepFiles: 2
 	},
 	consoleui: {
+		log: {
+			updateInterval: 250,
+			updateBatchLimit: 200,
+			bufferMaxSize: 500000
+		},
 		control: {
 			keybinds: {
 				'exitMode': {

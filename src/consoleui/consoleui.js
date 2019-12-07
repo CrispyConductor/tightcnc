@@ -432,6 +432,7 @@ class ConsoleUI {
 	async registerModules() {
 		require('./mode-home').registerConsoleUI(this);
 		require('./mode-control').registerConsoleUI(this);
+		require('./mode-log').registerConsoleUI(this);
 
 		for (let mname in this.modes) {
 			await this.modes[mname].init();

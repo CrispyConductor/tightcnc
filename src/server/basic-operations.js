@@ -292,11 +292,15 @@ class OpGetLog extends Operation {
 			end: {
 				type: Number,
 				description: 'Ending line to fetch.'
+			},
+			limit: {
+				type: Number,
+				description: 'Max number to return.'
 			}
 		};
 	}
 	async run(params) {
-		return this.opmanager.loggerMem.section(params.start, params.end);
+		return this.opmanager.loggerMem.section(params.start, params.end, params.limit);
 	}
 }
 
@@ -314,6 +318,7 @@ function registerOperations(opmanager) {
 	opmanager.registerOperation('probe', OpProbe);
 	opmanager.registerOperation('setOrigin', OpSetOrigin);
 	opmanager.registerOperation('waitSync', OpWaitSync);
+	opmanager.registerOperation('getLog', OpGetLog);
 }
 
 module.exports = registerOperations;

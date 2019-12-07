@@ -21,17 +21,19 @@ class LoggerMem {
 		}
 	}
 
-	section(start, end) {
+	section(start, end, limit) {
 		if (start === null || start === undefined) start = 0;
 		if (start < 0) start = this.nextNum + start;
 		if (start > this.nextNum) {
 			// Assume that server has restarted and client hasn't caught up.  Return the desired number of lines, up to the end of our buffer.
 			if (end === null || end === undefined) {
-				return this.lines;
+				if (!limit) return this.lines;
+				else return this.lines.slice(-limit);
 			} else if (end <= start) {
 				return [];
 			} else {
 				let numRequested = end - start;
+				if (limit && limit < numRequested) numRequested = limit;
 				let startIdx = this.lines.length - numRequested;
 				if (startIdx < 0) startIdx = 0;
 				return this.lines.slice(startIdx);
@@ -48,6 +50,7 @@ class LoggerMem {
 
 		let startIdx = start - linesStartNum;
 		let endIdx = end - linesStartNum;
+		if (endIdx - startIdx > limit) startIdx = endIdx - limit;
 		return this.lines.slice(startIdx, endIdx);
 	}
 
