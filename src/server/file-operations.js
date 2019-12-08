@@ -7,7 +7,7 @@ class OpListFiles extends Operation {
 		return {};
 	}
 	async run(params) {
-		let dir = this.opmanager.config.dataDir;
+		let dir = this.tightcnc.config.dataDir;
 		let files = await new Promise((resolve, reject) => {
 			fs.readdir(dir, (err, files) => {
 				if (err) reject(err);
@@ -39,8 +39,8 @@ class OpListFiles extends Operation {
 	}
 }
 
-function registerOperations(opmanager) {
-	opmanager.registerOperation('listFiles', OpListFiles);
+function registerOperations(tightcnc) {
+	tightcnc.registerOperation('listFiles', OpListFiles);
 }
 
 module.exports = registerOperations;

@@ -10,9 +10,9 @@ const zstreams = require('zstreams');
  * This is the central class for the application server.  Operations, gcode processors, and controllers
  * are registered here.
  *
- * @class OpManager
+ * @class TightCNCServer
  */
-class OpManager {
+class TightCNCServer {
 
 	/**
 	 * Class constructor.
@@ -160,5 +160,5 @@ class OpManager {
 
 }
 
-module.exports = OpManager;
+module.exports = TightCNCServer;
 

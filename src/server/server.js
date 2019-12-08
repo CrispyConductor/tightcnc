@@ -1,7 +1,7 @@
 const { APIRouter, JSONRPCInterface } = require('yaar');
 const express = require('express');
 const config = require('littleconf').getConfig();
-const OpManager = require('./op-manager');
+const TightCNCServer = require('./tightcnc-server');
 const { createSchema, Schema } = require('common-schema');
 const XError = require('xerror');
 
@@ -12,8 +12,8 @@ async function startServer() {
 	app.use(router.getExpressRouter());
 	router.version(1).addInterface(new JSONRPCInterface());
 
-	let opmanager = new OpManager(config);
-	await opmanager.init();
+	let tightcnc = new TightCNCServer(config);
+	await tightcnc.init();
 
 	function authMiddleware(ctx) {
 		let authHeader = ctx.req.header('Authorization');
@@ -52,8 +52,8 @@ async function startServer() {
 		);
 	}
 
-	for (let operationName in opmanager.operations) {
-		registerOperationAPICall(operationName, opmanager.operations[operationName]);
+	for (let operationName in tightcnc.operations) {
+		registerOperationAPICall(operationName, tightcnc.operations[operationName]);
 	}
 
 	let serverPort = config.serverPort || 2363;

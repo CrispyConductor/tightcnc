@@ -4,10 +4,10 @@ class OpGetStatus extends Operation {
 
 	async run(params) {
 		if (params.sync) {
-			await this.opmanager.controller.waitSync();
+			await this.tightcnc.controller.waitSync();
 		}
 		let fields = params && params.fields;
-		let c = this.opmanager.controller;
+		let c = this.tightcnc.controller;
 		let stat = {
 			ready: c.ready,
 			axisLabels: c.axisLabels,
@@ -67,9 +67,9 @@ class OpSend extends Operation {
 	}
 	async run(params) {
 		if (params.wait) {
-			await this.opmanager.controller.sendWait(params.line);
+			await this.tightcnc.controller.sendWait(params.line);
 		} else {
-			this.opmanager.controller.send(params.line);
+			this.tightcnc.controller.send(params.line);
 		}
 	}
 }
@@ -77,28 +77,28 @@ class OpSend extends Operation {
 class OpHold extends Operation {
 	getParamSchema() { return {}; }
 	run() {
-		this.opmanager.controller.hold();
+		this.tightcnc.controller.hold();
 	}
 }
 
 class OpResume extends Operation {
 	getParamSchema() { return {}; }
 	run() {
-		this.opmanager.controller.resume();
+		this.tightcnc.controller.resume();
 	}
 }
 
 class OpCancel extends Operation {
 	getParamSchema() { return {}; }
 	run() {
-		this.opmanager.controller.cancel();
+		this.tightcnc.controller.cancel();
 	}
 }
 
 class OpReset extends Operation {
 	getParamSchema() { return {}; }
 	run() {
-		this.opmanager.controller.reset();
+		this.tightcnc.controller.reset();
 	}
 }
 
@@ -119,7 +119,7 @@ class OpRealTimeMove extends Operation {
 	}
 	run(params) {
 		this.checkReady();
-		this.opmanager.controller.realTimeMove(params.axis, params.inc);
+		this.tightcnc.controller.realTimeMove(params.axis, params.inc);
 	}
 }
 
@@ -140,7 +140,7 @@ class OpMove extends Operation {
 	}
 	async run(params) {
 		this.checkReady();
-		await this.opmanager.controller.move(params.pos, params.feed);
+		await this.tightcnc.controller.move(params.pos, params.feed);
 	}
 }
 
@@ -156,7 +156,7 @@ class OpHome extends Operation {
 	}
 	async run(params) {
 		this.checkReady();
-		await this.opmanager.controller.home(params.axes);
+		await this.tightcnc.controller.home(params.axes);
 	}
 }
 
@@ -178,11 +178,11 @@ class OpSetAbsolutePos extends Operation {
 	}
 	async run(params) {
 		let pos = params.pos;
-		await this.opmanager.controller.waitSync();
+		await this.tightcnc.controller.waitSync();
 		if (!pos) {
 			pos = [];
-			for (let axisNum = 0; axisNum < this.opmanager.controller.usedAxes.length; axisNum++) {
-				if (this.opmanager.controller.usedAxes[axisNum]) {
+			for (let axisNum = 0; axisNum < this.tightcnc.controller.usedAxes.length; axisNum++) {
+				if (this.tightcnc.controller.usedAxes[axisNum]) {
 					pos.push(0);
 				} else {
 					pos.push(false);
@@ -194,13 +194,13 @@ class OpSetAbsolutePos extends Operation {
 			}
 		}
 		let gcode = 'G28.3';
-		for (let axisNum of this.opmanager.controller.listUsedAxisNumbers()) {
-			let axis = this.opmanager.controller.axisLabels[axisNum].toUpperCase();
+		for (let axisNum of this.tightcnc.controller.listUsedAxisNumbers()) {
+			let axis = this.tightcnc.controller.axisLabels[axisNum].toUpperCase();
 			if (typeof pos[axisNum] === 'number') {
 				gcode += ' ' + axis + pos[axisNum];
 			}
 		}
-		await this.opmanager.controller.sendWait(gcode);
+		await this.tightcnc.controller.sendWait(gcode);
 	}
 }
 
@@ -221,7 +221,7 @@ class OpProbe extends Operation {
 	}
 	async run(params) {
 		this.checkReady();
-		return await this.opmanager.controller.probe(params.pos, params.feed);
+		return await this.tightcnc.controller.probe(params.pos, params.feed);
 	}
 }
 
@@ -249,27 +249,27 @@ class OpSetOrigin extends Operation {
 		let pos = params.pos;
 		let posHasBooleans = pos && pos.some((c) => typeof c === 'boolean');
 		if (!pos || posHasBooleans || typeof params.coordSys !== 'number') {
-			await this.opmanager.controller.waitSync();
+			await this.tightcnc.controller.waitSync();
 		}
 		if (!pos) {
-			pos = this.opmanager.controller.mpos;
+			pos = this.tightcnc.controller.mpos;
 		} else {
 			for (let axisNum = 0; axisNum < pos.length; axisNum++) {
-				if (pos[axisNum] === true) pos[axisNum] = this.opmanager.controller.mpos[axisNum];
+				if (pos[axisNum] === true) pos[axisNum] = this.tightcnc.controller.mpos[axisNum];
 			}
 		}
 		let coordSys = params.coordSys;
 		if (typeof params.coordSys !== 'number') {
-			coordSys = this.opmanager.controller.activeCoordSys || 0;
+			coordSys = this.tightcnc.controller.activeCoordSys || 0;
 		}
 		let gcode = 'G10 L2 P' + (coordSys + 1);
-		for (let axisNum of this.opmanager.controller.listUsedAxisNumbers()) {
-			let axis = this.opmanager.controller.axisLabels[axisNum].toUpperCase();
+		for (let axisNum of this.tightcnc.controller.listUsedAxisNumbers()) {
+			let axis = this.tightcnc.controller.axisLabels[axisNum].toUpperCase();
 			if (typeof pos[axisNum] === 'number') {
 				gcode += ' ' + axis + pos[axisNum];
 			}
 		}
-		await this.opmanager.controller.sendWait(gcode);
+		await this.tightcnc.controller.sendWait(gcode);
 	}
 }
 
@@ -278,7 +278,7 @@ class OpWaitSync extends Operation {
 		return {};
 	}
 	async run() {
-		await this.opmanager.controller.waitSync();
+		await this.tightcnc.controller.waitSync();
 	}
 }
 
@@ -300,25 +300,25 @@ class OpGetLog extends Operation {
 		};
 	}
 	async run(params) {
-		return this.opmanager.loggerMem.section(params.start, params.end, params.limit);
+		return this.tightcnc.loggerMem.section(params.start, params.end, params.limit);
 	}
 }
 
-function registerOperations(opmanager) {
-	opmanager.registerOperation('getStatus', OpGetStatus);
-	opmanager.registerOperation('send', OpSend);
-	opmanager.registerOperation('hold', OpHold);
-	opmanager.registerOperation('resume', OpResume);
-	opmanager.registerOperation('cancel', OpCancel);
-	opmanager.registerOperation('reset', OpReset);
-	opmanager.registerOperation('realTimeMove', OpRealTimeMove);
-	opmanager.registerOperation('move', OpMove);
-	opmanager.registerOperation('home', OpHome);
-	opmanager.registerOperation('setAbsolutePos', OpSetAbsolutePos);
-	opmanager.registerOperation('probe', OpProbe);
-	opmanager.registerOperation('setOrigin', OpSetOrigin);
-	opmanager.registerOperation('waitSync', OpWaitSync);
-	opmanager.registerOperation('getLog', OpGetLog);
+function registerOperations(tightcnc) {
+	tightcnc.registerOperation('getStatus', OpGetStatus);
+	tightcnc.registerOperation('send', OpSend);
+	tightcnc.registerOperation('hold', OpHold);
+	tightcnc.registerOperation('resume', OpResume);
+	tightcnc.registerOperation('cancel', OpCancel);
+	tightcnc.registerOperation('reset', OpReset);
+	tightcnc.registerOperation('realTimeMove', OpRealTimeMove);
+	tightcnc.registerOperation('move', OpMove);
+	tightcnc.registerOperation('home', OpHome);
+	tightcnc.registerOperation('setAbsolutePos', OpSetAbsolutePos);
+	tightcnc.registerOperation('probe', OpProbe);
+	tightcnc.registerOperation('setOrigin', OpSetOrigin);
+	tightcnc.registerOperation('waitSync', OpWaitSync);
+	tightcnc.registerOperation('getLog', OpGetLog);
 }
 
 module.exports = registerOperations;

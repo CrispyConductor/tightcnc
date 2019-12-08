@@ -8,8 +8,8 @@ const XError = require('xerror');
  */
 class Operation {
 
-	constructor(opmanager, config) {
-		this.opmanager = opmanager;
+	constructor(tightcnc, config) {
+		this.tightcnc = tightcnc;
 		this.config = config;
 	}
 
@@ -39,7 +39,7 @@ class Operation {
 	getParamSchema() {}
 
 	checkReady() {
-		if (!this.opmanager.controller || !this.opmanager.controller.ready) {
+		if (!this.tightcnc.controller || !this.tightcnc.controller.ready) {
 			throw new XError(XError.BAD_REQUEST, 'Controller not ready');
 		}
 	}
