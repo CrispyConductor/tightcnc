@@ -1,6 +1,6 @@
 const argv = require('yargs').argv;
 const littleconf = require('littleconf');
-const SimpleCNCClient = require('../lib/clientlib');
+const TightCNCClient = require('../lib/clientlib');
 
 if (!argv.operation && !argv.o) {
 	console.error('Must provide operation to execute with --operation');
@@ -18,7 +18,7 @@ for (let key in argv) {
 }
 
 let config = littleconf.getConfig();
-let client = new SimpleCNCClient(config);
+let client = new TightCNCClient(config);
 
 client.op(operation, params)
 	.then((r) => {

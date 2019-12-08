@@ -5,7 +5,7 @@ const path = require('path');
 class LoggerDisk {
 
 	constructor(config = {}) {
-		this.logDir = config.logDir || '/tmp/simplecnc-log';
+		this.logDir = config.logDir || '/tmp/tightcnc-log';
 		this.maxFileSize = config.maxFileSize || 1000000;
 		this.keepFiles = config.keepFiles || 2;
 	}

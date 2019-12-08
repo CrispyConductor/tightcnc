@@ -1,5 +1,5 @@
 {
-  "name": "simple-cnc",
+  "name": "tightcnc",
   "version": "0.0.1",
   "description": "Simple backend-centric server for hobby cnc controllers",
   "dependencies": {

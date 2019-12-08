@@ -1,5 +1,5 @@
 const blessed = require('blessed');
-const SimpleCNCClient = require('../../lib/clientlib');
+const TightCNCClient = require('../../lib/clientlib');
 const pasync = require('pasync');
 
 class ConsoleUI {
@@ -169,7 +169,7 @@ class ConsoleUI {
 		this.screen = blessed.screen({
 			smartCSR: true
 		});
-		this.screen.title = 'SimpleCNC Console UI';
+		this.screen.title = 'TightCNC Console UI';
 
 		this.mainOuterBox = blessed.box({
 			top: 0,
@@ -257,7 +257,7 @@ class ConsoleUI {
 
 	async initClient() {
 		console.log('Connecting ...');
-		this.client = new SimpleCNCClient(this.config);
+		this.client = new TightCNCClient(this.config);
 		return await this.client.op('getStatus');
 	}
 

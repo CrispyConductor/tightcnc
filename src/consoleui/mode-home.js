@@ -16,7 +16,7 @@ class ModeHome extends ConsoleUIMode {
 			top: '50%',
 			width: '100%',
 			height: '100%',
-			content: 'SimpleCNC ConsoleUI',
+			content: 'TightCNC ConsoleUI',
 			align: 'center'
 		});
 		this.box.append(text);

@@ -14,11 +14,11 @@ module.exports = {
 			xany: true
 		}
 	},
-	dataDir: '/tmp/simplecnc-data',
+	dataDir: '/tmp/tightcnc-data',
 	operations: {
 	},
 	logger: {
-		logDir: '/tmp/simplecnc-log',
+		logDir: '/tmp/tightcnc-log',
 		maxFileSize: 1000000,
 		keepFiles: 2
 	},
