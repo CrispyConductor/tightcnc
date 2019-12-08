@@ -14,6 +14,7 @@ module.exports = {
 			xany: true
 		}
 	},
+	dataDir: '/tmp/simplecnc-data',
 	operations: {
 	},
 	logger: {
