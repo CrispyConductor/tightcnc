@@ -1,4 +1,5 @@
 const Operation = require('./operation');
+const objtools = require('objtools');
 
 class OpGetStatus extends Operation {
 
@@ -7,37 +8,12 @@ class OpGetStatus extends Operation {
 			await this.tightcnc.controller.waitSync();
 		}
 		let fields = params && params.fields;
-		let c = this.tightcnc.controller;
-		let stat = {
-			ready: c.ready,
-			axisLabels: c.axisLabels,
-			usedAxes: c.usedAxes,
-			mpos: c.mpos,
-			pos: c.getPos(),
-			mposOffset: c.getCoordOffsets(),
-			activeCoordSys: c.activeCoordSys,
-			offset: c.offset,
-			offsetEnabled: c.offsetEnabled,
-			storedPositions: c.storedPositions,
-			homed: c.homed,
-			paused: c.paused,
-			units: c.units,
-			feed: c.feed,
-			incremental: c.incremental,
-			moving: c.moving,
-			coolant: c.coolant,
-			spindle: c.spindle,
-			line: c.line,
-			error: c.error,
-			errorData: c.errorData,
-			programRunning: c.programRunning
-		};
+		let stat = await this.tightcnc.getStatus();
 		if (!fields) return stat;
 		let ret = {};
 		for (let field of fields) {
-			if (field in stat) {
-				ret[field] = stat[field];
-			}
+			let val = objtools.getPath(stat, field);
+			if (val !== undefined) objtools.setPath(ret, field, val);
 		}
 		return ret;
 	}

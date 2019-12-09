@@ -13,7 +13,7 @@ async function startServer() {
 	router.version(1).addInterface(new JSONRPCInterface());
 
 	let tightcnc = new TightCNCServer(config);
-	await tightcnc.init();
+	await tightcnc.initServer();
 
 	function authMiddleware(ctx) {
 		let authHeader = ctx.req.header('Authorization');

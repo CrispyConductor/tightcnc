@@ -246,6 +246,40 @@ class Controller extends EventEmitter {
 	 */
 	probe(pos, feed = null) {}
 
+	/**
+	 * Return an object containing controller status.  Controller classes may override this, but should make an effort
+	 * to conform as much as possible to the format of this status object.
+	 *
+	 * @method getStatus
+	 * @return {Object}
+	 */
+	getStatus() {
+		let c = this;
+		return {
+			ready: c.ready,
+			axisLabels: c.axisLabels,
+			usedAxes: c.usedAxes,
+			mpos: c.mpos,
+			pos: c.getPos(),
+			mposOffset: c.getCoordOffsets(),
+			activeCoordSys: c.activeCoordSys,
+			offset: c.offset,
+			offsetEnabled: c.offsetEnabled,
+			storedPositions: c.storedPositions,
+			homed: c.homed,
+			paused: c.paused,
+			units: c.units,
+			feed: c.feed,
+			incremental: c.incremental,
+			moving: c.moving,
+			coolant: c.coolant,
+			spindle: c.spindle,
+			line: c.line,
+			error: c.error,
+			errorData: c.errorData,
+			programRunning: c.programRunning
+		};
+	}
 
 	listUsedAxisNumbers() {
 		let ret = [];

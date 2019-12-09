@@ -5,6 +5,7 @@ const LoggerMem = require('./logger-mem');
 const mkdirp = require('mkdirp');
 const GcodeProcessor = require('../../lib/gcode-processor');
 const zstreams = require('zstreams');
+const EventEmitter = require('events');
 
 /**
  * This is the central class for the application server.  Operations, gcode processors, and controllers
@@ -12,7 +13,7 @@ const zstreams = require('zstreams');
  *
  * @class TightCNCServer
  */
-class TightCNCServer {
+class TightCNCServer extends EventEmitter {
 
 	/**
 	 * Class constructor.
@@ -43,9 +44,9 @@ class TightCNCServer {
 	/**
 	 * Initialize class.  To be called after everything's registered.
 	 *
-	 * @method init
+	 * @method initServer
 	 */
-	async init() {
+	async initServer() {
 		// Whether to suppress duplicate error messages from being output sequentially
 		const suppressDuplicateErrors = this.config.suppressDuplicateErrors === undefined ? true : this.config.suppressDuplicateErrors;
 
@@ -119,6 +120,27 @@ class TightCNCServer {
 			throw new XError(XError.NOT_FOUND, 'No such operation: ' + opname);
 		}
 		return await this.operations[name].run(params);
+	}
+
+	/**
+	 * Return the current status object.
+	 *
+	 * @method getStatus
+	 * @return {Promise{Object}}
+	 */
+	async getStatus() {
+		let statusObj = {};
+		// Fetch controller status
+		statusObj.controller = this.controller ? this.controller.getStatus() : {};
+
+		// Fetch job status
+
+		// Emit 'statusRequest' event so other components can modify the status object directly
+		this.emit('statusRequest', statusObj);
+
+		// Return status
+		return statusObj
+
 	}
 
 	/**
