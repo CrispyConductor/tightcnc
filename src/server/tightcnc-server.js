@@ -22,6 +22,8 @@ class TightCNCServer extends EventEmitter {
 	 * @param {Object} config
 	 */
 	constructor(config = null) {
+		super();
+
 		if (!config) {
 			config = require('littleconf').getConfig();
 		}

@@ -294,26 +294,28 @@ class ConsoleUI {
 	}
 
 	updatePrimaryStatusBoxes(status) {
+		let cstatus = status.controller;
+
 		// Machine state
 		let machineState = null;
 		let machineError = null;
-		if (status.error) {
+		if (cstatus.error) {
 			machineState = '{red-bg}ERROR{/red-bg}';
-			if (status.errorData && (status.errorData.message || status.errorData.msg)) {
-				machineError = status.errorData.message || status.errorData.msg;
-			} else if (status.errorData) {
-				machineError = JSON.stringify(status.errorData);
+			if (cstatus.errorData && (cstatus.errorData.message || cstatus.errorData.msg)) {
+				machineError = cstatus.errorData.message || cstatus.errorData.msg;
+			} else if (cstatus.errorData) {
+				machineError = JSON.stringify(cstatus.errorData);
 			} else {
 				machineError = 'Unknown';
 			}
-		} else if (status.ready) {
+		} else if (cstatus.ready) {
 			machineState = '{green-bg}READY{/green-bg}';
 		} else {
 			machineState = '{red-bg}NOT READY{/red-bg}';
 		}
 		this.machineStateStatusBox.data.state = machineState;
 		this.machineStateStatusBox.data.error = machineError;
-		this.machineStateStatusBox.data.paused = status.paused ? '{red-bg}YES{/red-bg}' : 'NO';
+		this.machineStateStatusBox.data.paused = cstatus.paused ? '{red-bg}YES{/red-bg}' : 'NO';
 
 		// Position
 		const posPrecision = 3;
@@ -321,49 +323,49 @@ class ConsoleUI {
 			if (this.usedAxes[i]) {
 				let axis = this.axisLabels[i];
 				let posStr = '';
-				if (status.pos && typeof status.pos[i] === 'number') {
-					posStr += status.pos[i].toFixed(posPrecision);
+				if (cstatus.pos && typeof cstatus.pos[i] === 'number') {
+					posStr += cstatus.pos[i].toFixed(posPrecision);
 				}
-				if (status.mpos && typeof status.mpos[i] === 'number') {
-					posStr += '{gray-fg}/' + status.mpos[i].toFixed(posPrecision) + '{/gray-fg}';
+				if (cstatus.mpos && typeof cstatus.mpos[i] === 'number') {
+					posStr += '{gray-fg}/' + cstatus.mpos[i].toFixed(posPrecision) + '{/gray-fg}';
 				}
 				this.positionStatusBox.data[axis] = posStr;
 			}
 		}
 
 		// Misc
-		this.miscStateStatusBox.data.activeCoordSys = (typeof status.activeCoordSys === 'number') ? ('G' + (status.activeCoordSys + 54)) : '';
-		if (status.homed) {
+		this.miscStateStatusBox.data.activeCoordSys = (typeof cstatus.activeCoordSys === 'number') ? ('G' + (cstatus.activeCoordSys + 54)) : '';
+		if (cstatus.homed) {
 			this.miscStateStatusBox.data.allAxisHomed = '{green-fg}YES{/green-fg}';
 			for (let i = 0; i < this.usedAxes.length; i++) {
-				if (this.usedAxes[i] && !status.homed[i]) {
+				if (this.usedAxes[i] && !cstatus.homed[i]) {
 					this.miscStateStatusBox.data.allAxisHomed = 'NO';
 				}
 			}
 		} else {
 			this.miscStateStatusBox.data.allAxisHomed = '';
 		}
-		this.miscStateStatusBox.data.units = status.units;
-		this.miscStateStatusBox.data.feed = (typeof status.feed === 'number') ? status.feed.toFixed(posPrecision) : '';
+		this.miscStateStatusBox.data.units = cstatus.units;
+		this.miscStateStatusBox.data.feed = (typeof cstatus.feed === 'number') ? cstatus.feed.toFixed(posPrecision) : '';
 		const boolstr = (val, iftrue = '{yellow-fg}YES{/yellow-fg}', iffalse = 'NO') => {
 			if (val) return iftrue;
 			if (val === null || val === undefined || val === '') return '';
 			return iffalse;
 		};
-		this.miscStateStatusBox.data.incremental = boolstr(status.incremental);
-		this.miscStateStatusBox.data.moving = boolstr(status.moving);
+		this.miscStateStatusBox.data.incremental = boolstr(cstatus.incremental);
+		this.miscStateStatusBox.data.moving = boolstr(cstatus.moving);
 		let spindleStr = '';
-		if (status.spindle === true && status.spindleDirection === 1) {
+		if (cstatus.spindle === true && cstatus.spindleDirection === 1) {
 			spindleStr = '{yellow-fg}FWD{/yellow-fg}';
-		} else if (status.spindle === true && status.spindleDirection === -1) {
+		} else if (cstatus.spindle === true && cstatus.spindleDirection === -1) {
 			spindleStr = '{yellow-fg}REV{/yellow-fg}';
-		} else if (status.spindle === true) {
+		} else if (cstatus.spindle === true) {
 			spindleStr = '{yellow-fg}ON{/yellow-fg}';
-		} else if (status.spindle === false) {
+		} else if (cstatus.spindle === false) {
 			spindleStr = 'OFF';
 		}
 		this.miscStateStatusBox.data.spindle = spindleStr;
-		this.miscStateStatusBox.data.coolant = boolstr(status.coolant, '{yellow-fg}ON{/yellow-fg}', 'OFF');
+		this.miscStateStatusBox.data.coolant = boolstr(cstatus.coolant, '{yellow-fg}ON{/yellow-fg}', 'OFF');
 
 		this.updateStatusBoxes();
 	}
@@ -396,8 +398,8 @@ class ConsoleUI {
 				try {
 					status = await this.client.op('getStatus');
 					this.lastStatus = status;
-					this.axisLabels = status.axisLabels;
-					this.usedAxes = status.usedAxes;
+					this.axisLabels = status.controller.axisLabels;
+					this.usedAxes = status.controller.usedAxes;
 				} catch (err) {
 					this.clientError(err);
 				}
@@ -446,8 +448,8 @@ class ConsoleUI {
 	async run() {
 		let initStatus = await this.initClient();
 		this.lastStatus = initStatus;
-		this.axisLabels = initStatus.axisLabels;
-		this.usedAxes = initStatus.usedAxes;
+		this.axisLabels = initStatus.controller.axisLabels;
+		this.usedAxes = initStatus.controller.usedAxes;
 
 		this.initUI();
 		await this.registerModules();

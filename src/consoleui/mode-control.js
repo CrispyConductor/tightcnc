@@ -91,7 +91,7 @@ class ModeControl extends ConsoleUIMode {
 					await this.consoleui.client.op('waitSync', {});
 					let probePos = [];
 					for (let axisNum = 0; axisNum < this.consoleui.axisLabels.length; axisNum++) probePos.push(null);
-					probePos[params.axis] = this.consoleui.lastStatus.pos[params.axis] + params.mult * this.moveIncrement;
+					probePos[params.axis] = this.consoleui.lastStatus.controller.pos[params.axis] + params.mult * this.moveIncrement;
 					this.consoleui.showTempMessage('Probing ...');
 					let probeTripped = true;
 					try {
@@ -129,7 +129,7 @@ class ModeControl extends ConsoleUIMode {
 
 	_refreshText() {
 		let content = '{bold}Machine Control{/bold}';
-		content += '\nMove Increment: ' + this.moveIncrement + ' ' + (this.consoleui.lastStatus.units || '');
+		content += '\nMove Increment: ' + this.moveIncrement + ' ' + (this.consoleui.lastStatus.controller.units || '');
 		if (this.onlyAxes) {
 			content += '\nNext command axes: ' + this.onlyAxes.map((axisNum) => this.consoleui.axisLabels[axisNum].toUpperCase()).join(', ');
 		}
