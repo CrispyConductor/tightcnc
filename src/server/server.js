@@ -47,7 +47,7 @@ async function startServer() {
 			},
 			authMiddleware,
 			async (ctx) => {
-				let result = await tightcnc.runOperation(operatonName, ctx.params);
+				let result = await tightcnc.runOperation(operationName, ctx.params);
 				//let result = await operation.run(ctx.params);
 				if (!result) result = { success: true };
 				return result;
