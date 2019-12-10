@@ -167,9 +167,9 @@ class JobManager {
 
 	async dryRunJob(jobOptions, outputFile = null) {
 		let origJobOptions = jobOptions;
+		jobOptions = objtools.deepCopy(jobOptions);
 		jobOptions.filename = path.resolve(this.tightcnc.config.dataDir, jobOptions.filename);
 		if (outputFile) outputFile = path.resolve(this.tightcnc.config.dataDir, outputFile);
-		jobOptions = objtools.deepCopy(jobOptions);
 		let gcodeProcessorStatus = {};
 		if (jobOptions.rawFile) {
 			delete jobOptions.gcodeProcessors;
