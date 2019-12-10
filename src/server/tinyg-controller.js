@@ -712,8 +712,8 @@ class TinyGController extends Controller {
 
 		let dataBuf = '';
 		// Bounds within which to stop and start reading from the stream
-		let sendQueueHighWater = this.config.streamSendQueueHighWaterMark || 50;
-		let sendQueueLowWater = this.config.streamSendQueueLowWaterMark || 10;
+		let sendQueueHighWater = this.config.streamSendQueueHighWaterMark || 5;
+		let sendQueueLowWater = this.config.streamSendQueueLowWaterMark || Math.min(10, Math.floor(sendQueueHighWater / 5));
 		let streamPaused = false;
 		let canceled = false;
 
@@ -736,6 +736,7 @@ class TinyGController extends Controller {
 			this.removeListener('sent', sentListener);
 			this.removeListener('cancelRunningOps', cancelHandler);
 			canceled = true;
+			waiter.reject(err);
 			stream.emit('error', err);
 		};
 
@@ -743,6 +744,7 @@ class TinyGController extends Controller {
 			if (canceled) return;
 			this.removeListener('sent', sentListener);
 			this.removeListener('cancelRunningOps', cancelHandler);
+			waiter.reject(err);
 			canceled = true;
 		});
 

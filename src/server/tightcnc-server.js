@@ -6,6 +6,8 @@ const mkdirp = require('mkdirp');
 const GcodeProcessor = require('../../lib/gcode-processor');
 const zstreams = require('zstreams');
 const EventEmitter = require('events');
+const path = require('path');
+const JobManager = require('./job-manager');
 
 /**
  * This is the central class for the application server.  Operations, gcode processors, and controllers
@@ -40,6 +42,7 @@ class TightCNCServer extends EventEmitter {
 		this.registerController('TinyG', require('./tinyg-controller'));
 		require('./basic-operations')(this);
 		require('./file-operations')(this);
+		require('./job-operations')(this);
 		this.registerGcodeProcessor('gcodevm', require('../../lib/gcode-processors/gcode-vm'));
 	}
 
@@ -99,6 +102,10 @@ class TightCNCServer extends EventEmitter {
 			this.controller = {};
 		}
 
+		// Set up the job manager
+		this.jobManager = new JobManager(this);
+		await this.jobManager.initialize();
+
 		// Initialize operations
 		for (let opname in this.operations) {
 			await this.operations[opname].init();
@@ -136,13 +143,13 @@ class TightCNCServer extends EventEmitter {
 		statusObj.controller = this.controller ? this.controller.getStatus() : {};
 
 		// Fetch job status
+		statusObj.job = this.jobManager ? this.jobManager.getStatus() : undefined;
 
 		// Emit 'statusRequest' event so other components can modify the status object directly
 		this.emit('statusRequest', statusObj);
 
 		// Return status
-		return statusObj
-
+		return statusObj;
 	}
 
 	/**
@@ -154,7 +161,7 @@ class TightCNCServer extends EventEmitter {
 	 *   @param {String[]} options.data - Array of gcode line strings.  Can be supplied instead of filename.
 	 *   @param {Object[]} options.gcodeProcessors - The set of gcode processors to apply, in order, along with
 	 *     options for each.  These objects are modified by this function to add the instantiated gcode processor
-	 *     instances under the key 'inst'.
+	 *     instances under the key 'inst' (unless the 'inst' key already exists, in which case it is used).
 	 *     @param {String} options.gcodeProcessors.#.name - Name of gcode processor.
 	 *     @param {Object} options.gcodeProcessors.#.options - Additional options to pass to gcode processor constructor.
 	 * @return {Promise{ReadableStream}} - A promise that resolves with a readable data stream.  The stream will have
@@ -164,7 +171,9 @@ class TightCNCServer extends EventEmitter {
 		// Handle case where there are no gcode processors
 		if (!options.gcodeProcessors || !options.gcodeProcessors.length) {
 			if (options.filename) {
-				return zstreams.fromFile(options.filename);
+				let filename = options.filename;
+				if (!path.isAbsolute(filename)) filename = path.join(this.config.dataDir, filename);
+				return zstreams.fromFile(filename);
 			} else {
 				return zstreams.fromString(options.data.join('\n') + '\n');
 			}
@@ -172,12 +181,18 @@ class TightCNCServer extends EventEmitter {
 
 		// Construct gcode processor chain
 		let gcodeProcessorInstances = [];
-		for (let gcpspec of (this.options.gcodeProcessors || [])) {
-			let cls = this.gcodeProcessors[gcpspec.name];
-			if (!cls) throw new XError(XError.NOT_FOUND, 'Gcode processor not found: ' + gcpspec.name);
-			let inst = new cls(gcpspec.options || []);
-			gcpspec.inst = inst;
-			gcodeProcessorInstances.push(inst);
+		for (let gcpspec of (options.gcodeProcessors || [])) {
+			if (gcpspec.inst) {
+				gcodeProcessorInstances.push(inst);
+			} else {
+				let cls = this.gcodeProcessors[gcpspec.name];
+				if (!cls) throw new XError(XError.NOT_FOUND, 'Gcode processor not found: ' + gcpspec.name);
+				let opts = objtools.deepCopy(gcpspec.options || {});
+				opts.tightcnc = this;
+				let inst = new cls(opts);
+				gcpspec.inst = inst;
+				gcodeProcessorInstances.push(inst);
+			}
 		}
 		return await GcodeProcessor.buildProcessorChain(options.filename || options.data, gcodeProcessorInstances);
 	}
