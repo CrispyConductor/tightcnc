@@ -255,6 +255,33 @@ class ConsoleUI {
 		//this.registerGlobalKey([ 'escape', 'C-c' ], [ 'Esc' ], 'Exit', () => process.exit(0));
 	}
 
+	showWaitingBox(text = 'Waiting ...') {
+		if (this.waitingBox) return;
+		this.waitingBox = blessed.box({
+			border: {
+				type: 'line'
+			},
+			content: text,
+			align: 'center',
+			valign: 'middle',
+			width: text.length + 2,
+			height: 3,
+			top: '50%-2',
+			left: '50%-' + (Math.floor(text.length / 2) + 1)
+		});
+		this.mainOuterBox.append(this.waitingBox);
+		this.screen.lockKeys = true;
+		this.render();
+	}
+
+	hideWaitingBox() {
+		if (!this.waitingBox) return;
+		this.mainOuterBox.remove(this.waitingBox);
+		delete this.waitingBox;
+		this.screen.lockKeys = false;
+		this.render();
+	}
+
 	async initClient() {
 		console.log('Connecting ...');
 		this.client = new TightCNCClient(this.config);
@@ -290,6 +317,15 @@ class ConsoleUI {
 			feed: 'Feed',
 			units: 'Unit',
 			allAxisHomed: 'Homed'
+		});
+		this.jobStatusBox = this.addStatusBox('Cur. Job', {
+			state: 'NONE',
+			percentComplete: '',
+			timeRemaining: ''
+		}, {
+			state: 'State',
+			percentComplete: '% Done',
+			timeRemaining: 'Remain'
 		});
 	}
 
@@ -367,6 +403,33 @@ class ConsoleUI {
 		this.miscStateStatusBox.data.spindle = spindleStr;
 		this.miscStateStatusBox.data.coolant = boolstr(cstatus.coolant, '{yellow-fg}ON{/yellow-fg}', 'OFF');
 
+		// Job
+		if (status.job && status.job.state !== 'none') {
+			if (status.job.state === 'initializing') {
+				this.jobStatusBox.data.state = '{blue-bg}INIT{/blue-bg}';
+			} else if (status.job.state === 'running') {
+				this.jobStatusBox.data.state = '{yellow-bg}RUN{/yellow-bg}';
+			} else if (status.job.state === 'complete') {
+				this.jobStatusBox.data.state = '{green-bg}DONE{/green-bg}';
+			} else {
+				this.jobStatusBox.data.state = '{red-bg}' + status.job.state.toUpperCase() + '{/red-bg}';
+			}
+			if (status.job.progress) {
+				this.jobStatusBox.data.percentComplete = '' + status.job.progress.percentComplete.toFixed(1) + '%';
+				let hoursRemaining = Math.floor(status.job.progress.estTimeRemaining / 3600);
+				let minutesRemaining = Math.ceil((status.job.progress.estTimeRemaining - hoursRemaining * 3600) / 60);
+				if (minutesRemaining < 10) minutesRemaining = '0' + minutesRemaining;
+				this.jobStatusBox.data.timeRemaining = '' + hoursRemaining + ':' + minutesRemaining;
+			} else {
+				this.jobStatusBox.data.percentComplete = '';
+				this.jobStatusBox.data.timeRemaining = '';
+			}
+		} else {
+			this.jobStatusBox.data.state = 'NONE';
+			this.jobStatusBox.data.percentComplete = '';
+			this.jobStatusBox.data.timeRemaining = '';
+		}
+
 		this.updateStatusBoxes();
 	}
 
@@ -435,6 +498,7 @@ class ConsoleUI {
 		require('./mode-home').registerConsoleUI(this);
 		require('./mode-control').registerConsoleUI(this);
 		require('./mode-log').registerConsoleUI(this);
+		require('./mode-new-job').registerConsoleUI(this);
 
 		for (let mname in this.modes) {
 			await this.modes[mname].init();
