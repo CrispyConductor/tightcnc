@@ -129,7 +129,7 @@ class TightCNCServer extends EventEmitter {
 			throw new XError(XError.NOT_FOUND, 'No such operation: ' + opname);
 		}
 		try {
-			return await this.operations[name].run(params);
+			return await this.operations[opname].run(params);
 		} catch (err) {
 			console.error('Error running operation ' + opname);
 			console.error(err);
