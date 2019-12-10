@@ -141,7 +141,7 @@ class JobManager {
 		};
 		job = this.currentJob;
 		// Build the processor chain
-		source = await this.tightcnc.getGcodeSourceStream({
+		let source = await this.tightcnc.getGcodeSourceStream({
 			filename: jobOptions.filename,
 			gcodeProcessors: jobOptions.gcodeProcessors
 		});
@@ -162,7 +162,7 @@ class JobManager {
 					job.error = err.toObject ? err.toObject() : err;
 				}
 			});
-		return job;
+		return this.getStatus();
 	}
 
 	async dryRunJob(jobOptions, outputFile = null) {
