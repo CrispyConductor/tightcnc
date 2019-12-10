@@ -58,7 +58,7 @@ class JobManager {
 	async _checkFile(filename) {
 		if (path.isAbsolute(filename)) throw new XError(XError.INVALID_ARGUMENT, 'Only files in the data directory may be used');
 		if (filename.split(path.sep).indexOf('..') !== -1) throw new XError(XError.INVALID_ARGUMENT, 'Only files in the data directory may be used');
-		return path.resolve(this.tightcnc.dataDir, filename);
+		return path.resolve(this.tightcnc.config.dataDir, filename);
 	}
 
 	/**
@@ -83,7 +83,7 @@ class JobManager {
 		// Set up the gcode processors for this job
 		let origJobOptions = jobOptions;
 		jobOptions = objtools.deepCopy(jobOptions);
-		jobOptions.filename = path.resolve(this.tightcnc.dataDir, jobOptions.filename);
+		jobOptions.filename = path.resolve(this.tightcnc.config.dataDir, jobOptions.filename);
 		if (jobOptions.rawFile) {
 			delete jobOptions.gcodeProcessors;
 		} else {
@@ -167,8 +167,8 @@ class JobManager {
 
 	async dryRunJob(jobOptions, outputFile = null) {
 		let origJobOptions = jobOptions;
-		jobOptions.filename = path.resolve(this.tightcnc.dataDir, jobOptions.filename);
-		if (outputFile) outputFile = path.resolve(this.tightcnc.dataDir, outputFile);
+		jobOptions.filename = path.resolve(this.tightcnc.config.dataDir, jobOptions.filename);
+		if (outputFile) outputFile = path.resolve(this.tightcnc.config.dataDir, outputFile);
 		jobOptions = objtools.deepCopy(jobOptions);
 		let gcodeProcessorStatus = {};
 		if (jobOptions.rawFile) {

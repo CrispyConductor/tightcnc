@@ -10,7 +10,9 @@ async function startServer() {
 	const router = new APIRouter();
 	const app = express();
 	app.use(router.getExpressRouter());
-	router.version(1).addInterface(new JSONRPCInterface());
+	router.version(1).addInterface(new JSONRPCInterface({
+		includeErrorStack: true
+	}));
 
 	let tightcnc = new TightCNCServer(config);
 	await tightcnc.initServer();
@@ -45,7 +47,8 @@ async function startServer() {
 			},
 			authMiddleware,
 			async (ctx) => {
-				let result = await operation.run(ctx.params);
+				let result = await tightcnc.runOperation(operatonName, ctx.params);
+				//let result = await operation.run(ctx.params);
 				if (!result) result = { success: true };
 				return result;
 			}
