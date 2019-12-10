@@ -190,7 +190,7 @@ class TightCNCServer extends EventEmitter {
 		let gcodeProcessorInstances = [];
 		for (let gcpspec of (options.gcodeProcessors || [])) {
 			if (gcpspec.inst) {
-				gcodeProcessorInstances.push(inst);
+				gcodeProcessorInstances.push(gcpspec.inst);
 			} else {
 				let cls = this.gcodeProcessors[gcpspec.name];
 				if (!cls) throw new XError(XError.NOT_FOUND, 'Gcode processor not found: ' + gcpspec.name);
