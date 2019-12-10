@@ -34,7 +34,7 @@ class OpStartJob extends Operation {
 			gcodeProcessors: params.gcodeProcessors,
 			rawFile: params.rawFile
 		};
-		return await this.tightcnc.startJob(jobOptions);
+		return await this.tightcnc.jobManager.startJob(jobOptions);
 	}
 }
 
@@ -51,7 +51,7 @@ class OpJobDryRun extends Operation {
 			gcodeProcessors: params.gcodeProcessors,
 			rawFile: params.rawFile
 		};
-		return await this.tightcnc.dryRunJob(jobOptions, params.outputFilename ? _checkFile(params.outputFilename, this.tightcnc) : null);
+		return await this.tightcnc.jobManager.dryRunJob(jobOptions, params.outputFilename ? _checkFile(params.outputFilename, this.tightcnc) : null);
 	}
 }
 
