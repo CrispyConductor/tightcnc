@@ -73,7 +73,9 @@ class LoggerDisk {
 			this.curStream = fs.createWriteStream(path.join(this.logDir, newFilename), { flags: 'w' });
 			while (this.curFiles.length > this.keepFiles) {
 				let fileToDelete = this.curFiles.shift();
-				fs.unlink(path.join(this.logDir, fileToDelete.filename), (err) => console.error(err));
+				fs.unlink(path.join(this.logDir, fileToDelete.filename), (err) => {
+					if(err) console.error('LoggerDisk error removing file', err);
+				});
 			}
 		}
 	}
