@@ -2,6 +2,8 @@ const ConsoleUIMode = require('./consoleui-mode');
 const blessed = require('blessed');
 const XError = require('xerror');
 const objtools = require('objtools');
+const fs = require('fs');
+const path = require('path');
 
 class ModeNewJob extends ConsoleUIMode {
 
@@ -152,6 +154,63 @@ class ModeNewJob extends ConsoleUIMode {
 		this.consoleui.render();
 	}
 
+	uploadFile() {
+		let fileSelector = blessed.filemanager({
+			cwd: this.foleLastCwd,
+			width: '50%',
+			height: '50%',
+			top: 'center',
+			left: 'center',
+			border: {
+				type: 'line'
+			},
+			style: {
+				selected: {
+					inverse: true
+				},
+				item: {
+					inverse: false
+				}
+			},
+			keys: true
+		});
+		this.box.append(fileSelector);
+		fileSelector.focus();
+		fileSelector.once('cancel', () => {
+			this.box.remove(fileSelector);
+			this.consoleui.render();
+		});
+		fileSelector.once('file', (filename) => {
+			this.fileLastCwd = fileSelector.cwd;
+			this.box.remove(fileSelector);
+			this.consoleui.render();
+			this.consoleui.showWaitingBox('Uploading ...');
+			fs.readFile(filename, (err, fileData) => {
+				if (err) {
+					this.consoleui.hideWaitingBox();
+					this.consoleui.clientError(err);
+					return;
+				}
+				fileData = fileData.toString('utf8');
+				fileBaseName = path.basename(filename);
+				this.consoleui.client.op('uploadFile', {
+					filename: fileBaseName,
+					data: fileData
+				})
+					.then(() => {
+						this.consoleui.hideWaitingBox();
+						this.consoleui.showTempMessage('File uploaded.');
+					})
+					.catch((err) => {
+						this.consoleui.hideWaitingBox();
+						this.consoleui.clientError(err);
+					});
+			});
+		});
+		this.consoleui.render();
+		fileSelector.refresh();
+	}
+
 	makeJobOptionsObj() {
 		let obj = {};
 		if (this.jobFilename) obj.filename = this.jobFilename;
@@ -279,6 +338,7 @@ class ModeNewJob extends ConsoleUIMode {
 		
 		this.registerModeKey([ 'escape' ], [ 'Esc' ], 'Home', () => this.consoleui.exitMode());
 		this.registerModeKey([ 'f' ], [ 'f' ], 'Select File', () => this.selectJobFile());
+		this.registerModeKey([ 'u' ], [ 'u' ], 'Upload File', () => this.uploadFile());
 		this.registerModeKey([ 'o' ], [ 'o' ], 'Job Option', () => this.selectJobOption());
 		this.registerModeKey([ 'r' ], [ 'r' ], 'Reset', () => this.resetJobInfo());
 		this.registerModeKey([ 'd' ], [ 'd' ], 'Dry Run', () => this.jobDryRun());
