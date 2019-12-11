@@ -139,7 +139,6 @@ class ModeNewJob extends ConsoleUIMode {
 		this.consoleui.showWaitingBox('Running ...');
 		this.consoleui.client.op('jobDryRun', jobOptions)
 			.then((result) => {
-				console.log(result);
 				this.dryRunResults = result;
 				this.consoleui.showTempMessage('Dry run complete.');
 				this.consoleui.hideWaitingBox();
@@ -152,6 +151,27 @@ class ModeNewJob extends ConsoleUIMode {
 	}
 
 	jobStart() {
+		let jobOptions;
+		try {
+			jobOptions = this.makeJobOptionsObj();
+		} catch (err) {
+			this.consoleui.showTempMessage(err.message);
+			return;
+		}
+		this.consoleui.showWaitingBox('Initializing ...');
+		this.consoleui.client.op('startJob', jobOptions)
+			.then((result) => {
+				if (result.dryRunResults) {
+					this.dryRunResults = result.dryRunResults;
+				}
+				this.consoleui.showTempMessage('Starting job.');
+				this.consoleui.hideWaitingBox();
+				this.updateJobInfoText();
+			})
+			.catch((err) => {
+				this.consoleui.clientError(err);
+				this.consoleui.hideWaitingBox();
+			});
 	}
 
 	resetJobInfo() {

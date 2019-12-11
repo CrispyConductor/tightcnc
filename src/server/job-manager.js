@@ -37,7 +37,7 @@ class JobManager {
 		return {
 			state: this.currentJob.state,
 			jobOptions: this.currentJob.jobOptions,
-			dryRunResult: this.currentJob.dryRunResult,
+			dryRunResults: this.currentJob.dryRunResults,
 			startTime: this.currentJob.startTime,
 			error: this.currentJob.error,
 			gcodeProcessors: this.currentJob.gcodeProcessors,
