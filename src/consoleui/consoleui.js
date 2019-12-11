@@ -1,10 +1,12 @@
 const blessed = require('blessed');
 const TightCNCClient = require('../../lib/clientlib');
 const pasync = require('pasync');
+const EventEmitter = require('events');
 
-class ConsoleUI {
+class ConsoleUI extends EventEmitter {
 
 	constructor() {
+		super();
 		this.statusBoxes = [];
 		this.hints = [];
 		this.config = require('littleconf').getConfig();
@@ -479,6 +481,7 @@ class ConsoleUI {
 					this.lastStatus = status;
 					this.axisLabels = status.controller.axisLabels;
 					this.usedAxes = status.controller.usedAxes;
+					this.emit('statusUpdate', status);
 				} catch (err) {
 					this.clientError(err);
 				}
@@ -516,6 +519,7 @@ class ConsoleUI {
 		require('./mode-log').registerConsoleUI(this);
 		require('./mode-new-job').registerConsoleUI(this);
 		require('./job-option-rawfile').registerConsoleUI(this);
+		require('./mode-job-info').registerConsoleUI(this);
 
 		for (let mname in this.modes) {
 			await this.modes[mname].init();

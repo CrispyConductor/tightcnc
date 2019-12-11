@@ -238,6 +238,17 @@ module.exports = {
 					action: {
 						sendTextbox: true
 					}
+				},
+				'resetMachine': {
+					keys: [ 'delete' ],
+					keyNames: [ 'Del' ],
+					label: 'Reset!',
+					action: {
+						operation: {
+							name: 'reset',
+							params: {}
+						}
+					}
 				}
 			}
 		}

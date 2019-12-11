@@ -441,7 +441,7 @@ class TinyGController extends Controller {
 
 		// Check if this is a SYSTEM READY response indicating a reset
 		if ('r' in data && data.r.msg === 'SYSTEM READY') {
-			err = new XError(XError.CANCELLED, 'Machine reset');
+			let err = new XError(XError.CANCELLED, 'Machine reset');
 			this.close(err);
 			this._retryConnect();
 			return;
