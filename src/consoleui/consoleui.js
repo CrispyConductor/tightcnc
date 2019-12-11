@@ -9,7 +9,8 @@ class ConsoleUI {
 		this.hints = [];
 		this.config = require('littleconf').getConfig();
 		this.hintBoxHeight = 3;
-		this.modes = [];
+		this.modes = {};
+		this.jobOptionClasses = {};
 		this.enableRendering = true;
 	}
 
@@ -255,6 +256,10 @@ class ConsoleUI {
 		//this.registerGlobalKey([ 'escape', 'C-c' ], [ 'Esc' ], 'Exit', () => process.exit(0));
 	}
 
+	registerJobOption(name, cls) {
+		this.jobOptionClasses[name] = cls;
+	}
+
 	showWaitingBox(text = 'Waiting ...') {
 		if (this.waitingBox) return;
 		this.waitingBox = blessed.box({
@@ -280,6 +285,17 @@ class ConsoleUI {
 		delete this.waitingBox;
 		this.screen.lockKeys = false;
 		this.render();
+	}
+
+	pointToStr(pos) {
+		let str = '';
+		for (let axisNum = 0; axisNum < this.usedAxes.length; axisNum++) {
+			if (this.usedAxes[axisNum]) {
+				if (str) str += ', ';
+				str += (pos[axisNum] || 0).toFixed(3);
+			}
+		}
+		return str;
 	}
 
 	async initClient() {
@@ -499,6 +515,7 @@ class ConsoleUI {
 		require('./mode-control').registerConsoleUI(this);
 		require('./mode-log').registerConsoleUI(this);
 		require('./mode-new-job').registerConsoleUI(this);
+		require('./job-option-rawfile').registerConsoleUI(this);
 
 		for (let mname in this.modes) {
 			await this.modes[mname].init();

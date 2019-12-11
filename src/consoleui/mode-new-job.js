@@ -1,24 +1,27 @@
 const ConsoleUIMode = require('./consoleui-mode');
 const blessed = require('blessed');
 const XError = require('xerror');
+const objtools = require('objtools');
 
 class ModeNewJob extends ConsoleUIMode {
 
 	constructor(consoleui) {
 		super(consoleui);
 		this.jobFilename = null;
+		this.jobOptionInstances = {};
 		this.dryRunResults = null;
 	}
 
 	updateJobInfoText() {
 		let jobInfoStr = '';
 		if (this.jobFilename) jobInfoStr += 'File: ' + this.jobFilename + '\n';
-
-		jobInfoStr = jobInfoStr.trim();
-		if (!jobInfoStr) {
-			jobInfoStr = '{bold}New Job{/bold}';
-		} else {
-			jobInfoStr = '{bold}New Job Info:{/bold}\n' + jobInfoStr;
+		
+		for (let jobOptionName in this.jobOptionInstances) {
+			let inst = this.jobOptionInstances[jobOptionName];
+			let optionStr = inst.getDisplayString();
+			if (optionStr) {
+				jobInfoStr += '\n' + optionStr.trim();
+			}
 		}
 
 		if (this.dryRunResults && this.dryRunResults.stats && this.dryRunResults.stats.lineCount) {
@@ -28,6 +31,17 @@ class ModeNewJob extends ConsoleUIMode {
 			let timeMinutes = Math.floor((this.dryRunResults.stats.time - timeHours * 3600) / 60);
 			if (timeMinutes < 10) timeMinutes = '0' + timeMinutes;
 			jobInfoStr += 'Est. Time: ' + timeHours + ':' + timeMinutes + '\n';
+			let bounds = objtools.getPath(this.dryRunResults, 'gcodeProcessors.final-job-vm.bounds');
+			if (bounds) {
+				jobInfoStr += 'Bounds: ' + this.consoleui.pointToStr(bounds[0]) + ' to ' + this.consoleui.pointToStr(bounds[1]) + '\n';
+			}
+		}
+
+		jobInfoStr = jobInfoStr.trim();
+		if (!jobInfoStr) {
+			jobInfoStr = '{bold}New Job{/bold}';
+		} else {
+			jobInfoStr = '{bold}New Job Info:{/bold}\n' + jobInfoStr;
 		}
 
 		this.jobInfoBox.setContent(jobInfoStr);
@@ -81,12 +95,70 @@ class ModeNewJob extends ConsoleUIMode {
 	}
 
 	selectJobOption() {
+		this.dryRunResults = null;
+		let optionNames = Object.keys(this.consoleui.jobOptionClasses);
+		let containerBox = blessed.box({
+			width: '50%',
+			border: {
+				type: 'line'
+			},
+			height: '50%',
+			top: 'center',
+			left: 'center'
+		});
+		let boxTitle = blessed.box({
+			width: '100%',
+			height: 1,
+			align: 'center',
+			content: 'Configure Job Option'
+		});
+		containerBox.append(boxTitle);
+		let listBox = blessed.list({
+			style: {
+				selected: {
+					inverse: true
+				},
+				item: {
+					inverse: false
+				}
+			},
+			keys: true,
+			items: optionNames,
+			width: '100%-2',
+			height: '100%-3',
+			top: 1,
+			border: {
+				type: 'line'
+			}
+		});
+		containerBox.append(listBox);
+		this.box.append(containerBox);
+		listBox.focus();
+		listBox.once('select', () => {
+			this.box.remove(containerBox);
+			let optionName = optionNames[listBox.selected];
+			if (!this.jobOptionInstances[optionName]) {
+				let cls = this.consoleui.jobOptionClasses[optionName];
+				this.jobOptionInstances[optionName] = new cls(this.consoleui);
+			}
+			this.jobOptionInstances[optionName].optionSelected();
+			this.consoleui.render();
+		});
+		listBox.once('cancel', () => {
+			containerBox.remove(listBox);
+			this.box.remove(containerBox);
+			this.consoleui.render();
+		});
+		this.consoleui.render();
 	}
 
 	makeJobOptionsObj() {
 		let obj = {};
 		if (this.jobFilename) obj.filename = this.jobFilename;
 		if (!obj.filename) throw new XError(XError.INVALID_ARGUMENT, 'No filename specified');
+		for (let key in this.jobOptionInstances) {
+			this.jobOptionInstances[key].addToJobOptions(obj);
+		}
 		return obj;
 	}
 
@@ -177,6 +249,7 @@ class ModeNewJob extends ConsoleUIMode {
 	resetJobInfo() {
 		this.jobFilename = null;
 		this.dryRunResults = null;
+		this.jobOptionInstances = {};
 		this.updateJobInfoText();
 	}
 
