@@ -192,7 +192,7 @@ class ModeNewJob extends ConsoleUIMode {
 					return;
 				}
 				fileData = fileData.toString('utf8');
-				fileBaseName = path.basename(filename);
+				let fileBaseName = path.basename(filename);
 				this.consoleui.client.op('uploadFile', {
 					filename: fileBaseName,
 					data: fileData
@@ -200,6 +200,9 @@ class ModeNewJob extends ConsoleUIMode {
 					.then(() => {
 						this.consoleui.hideWaitingBox();
 						this.consoleui.showTempMessage('File uploaded.');
+						this.jobFilename = fileBaseName;
+						this.dryRunResults = null;
+						this.updateJobInfoText();
 					})
 					.catch((err) => {
 						this.consoleui.hideWaitingBox();
