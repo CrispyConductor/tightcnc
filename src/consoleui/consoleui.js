@@ -521,6 +521,17 @@ class ConsoleUI extends EventEmitter {
 		require('./job-option-rawfile').registerConsoleUI(this);
 		require('./mode-job-info').registerConsoleUI(this);
 
+		// Register bundled plugins
+		require('../plugins').registerConsoleUIComponents(this);
+
+		// Register external plugins
+		for (let plugin of (this.config.plugins || [])) {
+			let p = require(plugin);
+			if (p.registerConsoleUIComponents) {
+				p.registerConsoleUIComponents(this);
+			}
+		}
+
 		for (let mname in this.modes) {
 			await this.modes[mname].init();
 		}

@@ -44,6 +44,17 @@ class TightCNCServer extends EventEmitter {
 		require('./file-operations')(this);
 		require('./job-operations')(this);
 		this.registerGcodeProcessor('gcodevm', require('../../lib/gcode-processors/gcode-vm'));
+
+		// Register bundled plugins
+		require('../plugins').registerServerComponents(this);
+
+		// Register external plugins
+		for (let plugin of (this.config.plugins || [])) {
+			let p = require(plugin);
+			if (p.registerServerComponents) {
+				require(plugin).registerServerComponents(this);
+			}
+		}
 	}
 
 	/**
