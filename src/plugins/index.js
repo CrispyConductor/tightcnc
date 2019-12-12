@@ -1,4 +1,4 @@
-const pluginList = [];
+const pluginList = [ './autolevel' ];
 
 const plugins = pluginList.map((reqName) => require(reqName));
 

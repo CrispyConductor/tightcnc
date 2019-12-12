@@ -237,7 +237,8 @@ class Controller extends EventEmitter {
 
 	/**
 	 * Probe toward position.  Resolve when probe trips.  Error if probe reaches position without tripping.  This should return
-	 * the position that the probe tripped at, and also ensure that the machine is positioned at that location.
+	 * the position that the probe tripped at, and also ensure that the machine is positioned at that location.  pos parameter contains
+	 * nulls at all axes that are not moved.
 	 *
 	 * @method probe
 	 * @param {Number[]} pos

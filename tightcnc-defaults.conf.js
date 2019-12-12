@@ -16,6 +16,16 @@ module.exports = {
 	},
 	dataDir: '/tmp/tightcnc-data',
 	operations: {
+		probeSurface: {
+			defaultOptions: {
+				probeSpacing: 10,
+				probeFeed: 25,
+				clearanceHeight: 2,
+				autoClearance: true,
+				autoClearanceMin: 0.5,
+				probeMinZ: -2
+			}
+		}
 	},
 	logger: {
 		logDir: '/tmp/tightcnc-log',
