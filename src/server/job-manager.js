@@ -55,12 +55,6 @@ class JobManager {
 		};
 	}
 
-	async _checkFile(filename) {
-		if (path.isAbsolute(filename)) throw new XError(XError.INVALID_ARGUMENT, 'Only files in the data directory may be used');
-		if (filename.split(path.sep).indexOf('..') !== -1) throw new XError(XError.INVALID_ARGUMENT, 'Only files in the data directory may be used');
-		return path.resolve(this.tightcnc.config.dataDir, filename);
-	}
-
 	/**
 	 * Start running a job on the machine.
 	 *

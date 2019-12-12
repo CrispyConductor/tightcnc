@@ -4,12 +4,6 @@ const path = require('path');
 const objtools = require('objtools');
 
 
-function _checkFile(filename, tightcnc) {
-	if (path.isAbsolute(filename)) throw new XError(XError.INVALID_ARGUMENT, 'Only files in the data directory may be used');
-	if (filename.split(path.sep).indexOf('..') !== -1) throw new XError(XError.INVALID_ARGUMENT, 'Only files in the data directory may be used');
-	return filename;
-}
-
 const jobOptionsSchema = {
 	filename: { type: String, required: true, description: 'Filename of gcode to run' },
 	rawFile: { type: Boolean, default: false, description: 'Do not process the gcode in the file at all.  Also disables stats.' },
@@ -30,7 +24,7 @@ class OpStartJob extends Operation {
 	async run(params) {
 		let dir = this.tightcnc.config.dataDir;
 		let jobOptions = {
-			filename: _checkFile(params.filename, this.tightcnc),
+			filename: this.tightcnc.validateDataFilename(params.filename, false),
 			gcodeProcessors: params.gcodeProcessors,
 			rawFile: params.rawFile
 		};
@@ -47,11 +41,11 @@ class OpJobDryRun extends Operation {
 	async run(params) {
 		let dir = this.tightcnc.config.dataDir;
 		let jobOptions = {
-			filename: _checkFile(params.filename, this.tightcnc),
+			filename: this.tightcnc.validateDataFilename(params.filename, false),
 			gcodeProcessors: params.gcodeProcessors,
 			rawFile: params.rawFile
 		};
-		return await this.tightcnc.jobManager.dryRunJob(jobOptions, params.outputFilename ? _checkFile(params.outputFilename, this.tightcnc) : null);
+		return await this.tightcnc.jobManager.dryRunJob(jobOptions, params.outputFilename ? this.tightcnc.validateDataFilename(params.outputFilename, false) : null);
 	}
 }
 

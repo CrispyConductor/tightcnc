@@ -273,6 +273,8 @@ class OpProbeSurface extends Operation {
 
 	async run(params) {
 		let options = objtools.deepCopy(params);
+		if (options.gcodeFilename) options.gcodeFilename = this.tightcnc.validateDataFilename(options.gcodeFilename, true);
+		if (options.surfaceMapFilename) options.surfaceMapFilename = this.tightcnc.validateDataFilename(options.surfaceMapFilename, true);
 		options.bounds = await this._getBounds(params);
 		startProbeSurface(this.tightcnc, options);
 		return surfaceProbeStatus;
