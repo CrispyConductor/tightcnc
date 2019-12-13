@@ -25,6 +25,7 @@ client.op(operation, params)
 		console.log(JSON.stringify(r, null, 4));
 	})
 	.catch((err) => {
-		console.error(err);
+		if (err.toObject) err = err.toObject();
+		console.error(JSON.stringify(err, null, 4));
 	});
 
