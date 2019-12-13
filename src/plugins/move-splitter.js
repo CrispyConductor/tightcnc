@@ -16,7 +16,7 @@ class MoveSplitter extends GcodeProcessor {
 
 	constructor(options = {}) {
 		super(options, 'movesplitter', true);
-		this.maxMoveLength = options.maxMoveLength;
+		this.maxMoveLength = options.maxMoveLength || 10;
 		this.vm = new GcodeVM(options);
 	}
 
@@ -27,7 +27,7 @@ class MoveSplitter extends GcodeProcessor {
 		// Make sure the line represents motion
 		if (!isMotion) return gline;
 		// If anything regarding changing coordinate systems has changed, ignore the line
-		if (changedCoordOffsets) return gline;
+		if (changedCoordOffsets || gline.has('G53')) return gline;
 		// Get position diffs for all changed axes
 		let endVMState = this.vm.getState();
 		let axisDiffs = [];
@@ -64,15 +64,19 @@ class MoveSplitter extends GcodeProcessor {
 		}
 		// don't send if line is now empty, or only contains the motion gcode
 		if (gline.words.length > 1 || (gline.words.length === 1 && 'G' + gline.get('G') !== motionCode) || gline.comment) {
-			gline.addComment('move split');
+			gline.addComment('sp');
 			this.pushGcode(gline);
+		} else {
+			let l = new GcodeLine();
+			l.addComment('sp');
+			this.push(l);
 		}
 
 		// Output movement segments
 		let numMoves = Math.ceil(dist / this.maxMoveLength);
 		for (let i = 0; i < numMoves; i++) {
 			let newgline = new GcodeLine(motionCode);
-			newgline.addComment('split partial move');
+			newgline.addComment('sp+');
 			for (let axisNum = 0; axisNum < axisDiffs.length; axisNum++) {
 				if (axisDiffs[axisNum]) {
 					let moveAxisDiff = (i + 1) * axisDiffs[axisNum] / numMoves;
@@ -87,6 +91,7 @@ class MoveSplitter extends GcodeProcessor {
 
 }
 
+module.exports.MoveSplitter = MoveSplitter;
 module.exports.registerServerComponents = function (tightcnc) {
 	tightcnc.registerGcodeProcessor('movesplitter', MoveSplitter);
 };

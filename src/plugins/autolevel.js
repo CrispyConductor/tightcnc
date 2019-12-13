@@ -5,6 +5,9 @@ const XError = require('xerror');
 const objtools = require('objtools');
 const KDTree = require('kd-tree-javascript').kdTree;
 const fs = require('fs');
+const GcodeProcessor = require('../../lib/gcode-processor');
+const GcodeVM = require('../../lib/gcode-vm');
+const { MoveSplitter } = require('./move-splitter');
 
 
 class SurfaceLevelMap {
@@ -225,6 +228,9 @@ function startProbeSurface(tightcnc, options) {
 			bounds: options.bounds,
 			probePointsX,
 			probePointsY,
+			spacingX,
+			spacingY,
+			minSpacing: Math.min(spacingX, spacingY),
 			time: new Date().toISOString(),
 			points: slm.getPoints()
 		};
@@ -339,7 +345,74 @@ class OpProbeSurface extends Operation {
 
 }
 
+
+
+
+class AutolevelGcodeProcessor extends GcodeProcessor {
+
+	constructor(options = {}) {
+		super(options, 'autolevel', true);
+		this.surfaceMapFilename = options.surfaceMapFilename;
+		this.vm = new GcodeVM(options);
+	}
+
+	_loadSurfaceMap() {
+		if (this.surfaceMap) return;
+		if (this.tightcnc) this.surfaceMapFilename = this.tightcnc.validateDataFilename(this.surfaceMapFilename, true);
+		return new Promise((resolve, reject) => {
+			fs.readFile(this.surfaceMapFilename, (err, data) => {
+				if (err) return reject(new XError('Error loading surface map', err));
+				this.surfaceMapData = JSON.parse(data.toString('utf8'));
+				this.surfaceMap = new SurfaceLevelMap(this.surfaceMapData.points);
+				resolve();
+			});
+		});
+	}
+
+	async addToChain(chain) {
+		await this._loadSurfaceMap();
+		chain.push(new MoveSplitter({
+			tightcnc: this.tightcnc,
+			maxMoveLength: this.surfaceMapData.minSpacing
+		}));
+		super.addToChain(chain);
+	}
+
+	async initProcessor() {
+		await this._loadSurfaceMap();
+	}
+
+	processGcode(gline) {
+		let startVMState = objtools.deepCopy(this.vm.getState());
+		// Run the line through the gcode VM
+		let { isMotion, changedCoordOffsets, motionCode } = this.vm.runGcodeLine(gline);
+		let endVMState = this.vm.getState();
+		// Make sure the line represents motion
+		if (!isMotion) return gline;
+		// If anything regarding changing coordinate systems has changed, ignore the line
+		if (changedCoordOffsets || gline.has('G53')) return gline;
+		// Make sure we're not in incremental mode
+		if (endVMState.incremental) return gline; // incremental mode not supported
+		// Make sure the motion mode is one of the supported motion modes
+		if (motionCode !== 'G0' && motionCode !== 'G1' && motionCode !== 'G2' && motionCode !== 'G3') throw new XError(XError.INVALID_ARGUMENT, 'Motion code ' + motionCode + ' not supported for autolevel');
+		// Get the Z value for the X and Y ending position
+		let toXY = [ endVMState.pos[0], endVMState.pos[1] ];
+		let zOffset = this.surfaceMap.predictZ(toXY);
+		if (zOffset === null) return gline;
+		let newZ = endVMState.pos[2] + zOffset;
+		// Set the new Z value
+		if (newZ !== gline.get('Z')) {
+			gline.set('Z', newZ);
+			gline.addComment('al');
+		}
+		return gline;
+	}
+
+}
+
+
 module.exports.registerServerComponents = function (tightcnc) {
+	tightcnc.registerGcodeProcessor('autolevel', AutolevelGcodeProcessor);
 	tightcnc.registerOperation('probeSurface', OpProbeSurface);
 	tightcnc.on('statusRequest', (status) => {
 		let probeStatus = getProbeStatus();
