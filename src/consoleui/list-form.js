@@ -1,6 +1,7 @@
 const blessed = require('blessed');
 const { Schema, createSchema } = require('common-schema');
 const pasync = require('pasync');
+const objtools = require('objtools');
 
 class ListForm {
 
@@ -47,20 +48,22 @@ class ListForm {
 			if (schemaData.editFn) {
 				r = await schemaData.editFn(container, schemaData, value, options);
 			} else if (schemaData.enum) {
-				r = await this._enumSelector(container, schemaData.title || schemaData.label || schemaData.description || 'Select Value', schemaData.enum, value || schemaData.default, options);
+				r = await this._enumSelector(container, schemaData.title || schemaData.label || options.key, 'Select Value', schemaData.enum, value || schemaData.default, options);
 			} else if (schemaData.type === 'boolean') {
-				r = await this._selector(container, schemaData.title || schemaData.label || schemaData.description || 'False or True', [ 'FALSE', 'TRUE' ], schemaData.default ? 1 : 0, options);
+				r = await this._selector(container, schemaData.title || schemaData.label || options.key || 'False or True', [ 'FALSE', 'TRUE' ], schemaData.default ? 1 : 0, options);
 				if (r !== null) r = !!r;
 			} else if (schemaData.type === 'object') {
 				r = await this._editObject(container, schemaData, value || schemaData.default || {}, options);
 			} else if (schemaData.type === 'string') {
-				r = await this._lineEditor(container, (schemaData.title || schemaData.label || schemaData.description || 'Value') + ':', value, options);
+				r = await this._lineEditor(container, (schemaData.title || schemaData.label || options.key || 'Value') + ':', value, options);
 			} else if (schemaData.type === 'number') {
-				r = await this._lineEditor(container, (schemaData.title || schemaData.label || schemaData.description || 'Value') + ':', value, options);
-				try {
-					r = parseFloat(r);
-				} catch (err) {
-					throw new Error('Must be a valid number');
+				r = await this._lineEditor(container, (schemaData.title || schemaData.label || options.key || 'Value') + ':', value, options);
+				if (r !== null) {
+					if (!r.length || isNaN(r)) {
+						throw new Error('Must be valid number');
+					} else {
+						r = parseFloat(r);
+					}
 				}
 			} else {
 				throw new Error('Unsupported edit schema type');
@@ -135,7 +138,6 @@ class ListForm {
 
 		textbox.on('submit', () => {
 			let value = textbox.getValue();
-			if (!value) value = null;
 			cleanup();
 			waiter.resolve(value);
 		});
@@ -164,7 +166,7 @@ class ListForm {
 			keysByIndex.push(key);
 			keyStrs.push(getEntryLabel(key, value[key]));
 		}
-		let title = schemaData.title || schemaData.label || schemaData.description || 'Edit Properties';
+		let title = schemaData.title || schemaData.label || options.key || 'Edit Properties';
 
 		keyStrs.push('[Done]');
 
@@ -177,7 +179,9 @@ class ListForm {
 			let key = keysByIndex[selected];
 			let curValue = value[key];
 			if (curValue === null || curValue === undefined) curValue = schemaData.properties[key].default;
-			let newValue = await this._editValue(container, schemaData.properties[key], curValue, schemaData.formOptions || {});
+			let opts = objtools.deepCopy(schemaData.formOptions || {});
+			opts.key = key;
+			let newValue = await this._editValue(container, schemaData.properties[key], curValue, opts);
 			if (newValue !== null) {
 				value[key] = newValue;
 				listBox.setItem(selected, getEntryLabel(key, newValue));
@@ -378,6 +382,10 @@ let lf = new ListForm(screen, {
 		ntest: {
 			type: 'number',
 			default: 3
+		},
+		subobj: {
+			prop1: String,
+			prop2: Number
 		}
 	}
 });
