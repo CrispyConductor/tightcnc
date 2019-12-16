@@ -10,7 +10,6 @@ class ListForm {
 		this.options = options;
 		if (!Schema.isSchema(schema)) schema = createSchema(schema);
 		this.schema = schema;
-		//if (schema.getData().type !== 'object') throw new Error('Invalid schema for ListForm');
 	}
 
 	async showEditor(container, defaultVal) {
@@ -48,7 +47,7 @@ class ListForm {
 			if (schemaData.editFn) {
 				r = await schemaData.editFn(container, schemaData, value, options);
 			} else if (schemaData.enum) {
-				r = await this._enumSelector(container, schemaData.title || schemaData.label || options.key, 'Select Value', schemaData.enum, value || schemaData.default, options);
+				r = await this._enumSelector(container, schemaData.title || schemaData.label || options.key || 'Select Value', schemaData.enum, value || schemaData.default, options);
 			} else if (schemaData.type === 'boolean') {
 				r = await this._selector(container, schemaData.title || schemaData.label || options.key || 'False or True', [ 'FALSE', 'TRUE' ], schemaData.default ? 1 : 0, options);
 				if (r !== null) r = !!r;
@@ -148,19 +147,22 @@ class ListForm {
 		return waiter.promise;
 	}
 
+	_getEntryDisplayLabel(key, value, schemaData) {
+		if (value === null || value === undefined) value = schemaData.default;
+		if (value === undefined) value = null;
+		let keyStr = '' + (schemaData.label || schemaData.description || key);
+		if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+			keyStr += ' - ' + value;
+		}
+		return keyStr;
+	}
+
 	async _editObject(container, schemaData, value = {}, options = {}) {
 		let keysByIndex = [];
 		let keyNames = [];
 		let keyStrs = [];
 		const getEntryLabel = (key, value) => {
-			let v = value;
-			if (v === null || v === undefined) v = schemaData.properties[key].default;
-			let prop = schemaData.properties[key];
-			let keyStr = prop.label || prop.description || key;
-			if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
-				keyStr += ' - ' + v;
-			}
-			return keyStr;
+			return this._getEntryDisplayLabel(key, value, schemaData.properties[key]);
 		};
 		for (let key in schemaData.properties) {
 			keysByIndex.push(key);
@@ -353,6 +355,8 @@ class ListForm {
 
 module.exports = ListForm;
 
+
+/*
 var screen = blessed.screen({
 	smartCSR: true
 });
@@ -400,5 +404,5 @@ lf.showEditor(screen)
 		console.error('Error', err);
 		process.exit(1);
 	});
-
+*/
 

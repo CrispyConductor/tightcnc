@@ -9,6 +9,10 @@ const GcodeProcessor = require('../../lib/gcode-processor');
 const GcodeVM = require('../../lib/gcode-vm');
 const { MoveSplitter } = require('./move-splitter');
 
+const JobOption = require('../consoleui/job-option');
+const ListForm = require('../consoleui/list-form');
+const blessed = require('blessed');
+
 
 class SurfaceLevelMap {
 
@@ -411,6 +415,67 @@ class AutolevelGcodeProcessor extends GcodeProcessor {
 }
 
 
+class AutolevelConsoleUIJobOption extends JobOption {
+
+	constructor(consoleui) {
+		super(consoleui);
+		this.alOptions = {
+			enabled: false
+		};
+	}
+
+	async _chooseSurfaceMap(container) {
+		let formSchema = {
+			label: 'AutoLevel Surface Map',
+			type: 'string',
+			enum: [
+				'[Create New]',
+				'file1',
+				'file2'
+			]
+		};
+		let form = new ListForm(this.consoleui.screen, formSchema);
+		return await form.showEditor(this.newJobMode.box);
+	}
+
+	async _optionsForm(container) {
+		let formSchema = {
+			label: 'AutoLevel Settings',
+			type: 'object',
+			properties: {
+				enabled: {
+					type: 'boolean',
+					default: false,
+					label: 'AutoLevel Enabled'
+				},
+				surfaceMap: {
+					type: 'string',
+					label: 'Surface Map',
+					editFn: async (container) => {
+						return await this._chooseSurfaceMap(container);
+					}
+				}
+			}
+		};
+		let form = new ListForm(this.consoleui.screen, formSchema);
+		let r = await form.showEditor(this.newJobMode.box, this.alOptions);
+		if (r !== null) this.alOptions = r;
+		this.newJobMode.updateJobInfoText();
+	}
+
+	optionSelected() {
+		this._optionsForm()
+			.catch((err) => this.consoleui.clientError(err));
+	}
+
+	getDisplayString() {
+		if (this.alOptions.enabled) return 'AutoLevel enabled';
+		else return null;
+	}
+
+}
+
+
 module.exports.registerServerComponents = function (tightcnc) {
 	tightcnc.registerGcodeProcessor('autolevel', AutolevelGcodeProcessor);
 	tightcnc.registerOperation('probeSurface', OpProbeSurface);
@@ -420,5 +485,9 @@ module.exports.registerServerComponents = function (tightcnc) {
 			status.probeSurface = probeStatus;
 		}
 	});
+};
+
+module.exports.registerConsoleUIComponents = function (consoleui) {
+	consoleui.registerJobOption('AutoLevel', AutolevelConsoleUIJobOption);
 };
 
