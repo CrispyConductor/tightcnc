@@ -427,7 +427,7 @@ class AutolevelConsoleUIJobOption extends JobOption {
 	async _runProbeSequence(params) {
 		let container = this.consoleui.mainPane;
 		let initStatus = await this.consoleui.runWithWait(async () => {
-			return await this.consoleui.client.op('probeSurface', formResults);
+			return await this.consoleui.client.op('probeSurface', params);
 		});
 		let probeInfoBox = blessed.box({
 			width: '50%',
