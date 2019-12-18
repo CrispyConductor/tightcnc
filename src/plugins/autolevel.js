@@ -225,7 +225,7 @@ function startProbeSurface(tightcnc, options) {
 
 		// Probing complete.  Move back to full clearance, and the lower bound XY
 		sendMove([ null, null, options.clearanceHeight ]);
-		sendMove([ lowerBound[0], lowerBound[0], null ]);
+		sendMove([ lowerBound[0], lowerBound[1], null ]);
 
 		// Save the probing results
 		surfaceProbeResults = {
