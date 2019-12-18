@@ -66,7 +66,8 @@ class TinyGController extends Controller {
 				stopBits: 1,
 				parity: 'none',
 				rtscts: false,
-				xany: true
+				xon: true,
+				xoff: true
 			};
 			for (let key in this.config) {
 				if (key in serialOptions) {
@@ -103,6 +104,17 @@ class TinyGController extends Controller {
 				this._retryConnect();
 			};
 			const onSerialData = (buf) => {
+				// Remove any stray XONs, XOFFs, and NULs from the stream
+				let newBuf = Buffer.alloc(buf.length);
+				let newBufIdx = 0;
+				for (let b of buf) {
+					if (b != 0 && b != 17 && b != 19) {
+						newBuf[newBufIdx] = b;
+						newBufIdx++;
+					}
+				}
+				buf = newBuf.slice(0, newBufIdx);
+
 				let str = this.serialReceiveBuf + buf.toString('utf8');
 				let strlines = str.split(/[\r\n]+/);
 				if (!strlines[strlines.length-1].trim()) {
