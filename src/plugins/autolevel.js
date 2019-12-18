@@ -424,18 +424,163 @@ class AutolevelConsoleUIJobOption extends JobOption {
 		};
 	}
 
+	async _editCoords(container, label, def) {
+		let form = new ListForm(this.consoleui);
+		let defaultStr;
+		if (def) {
+			defaultStr = def.slice(0, 2).join(',');
+		} else {
+			defaultStr = '';
+		}
+		let val = await form.lineEditor(container, label, defaultStr);
+		if (!val) return def;
+		if (!/^-?[0-9]+(\.[0-9]+)? *, *-?[0-9]+(\.[0-9]+)?$/.test(val)) {
+			await form._message(container, 'Invalid coordinates');
+			return await this._editCoords(container, label, def);
+		}
+		return val.split(/ *, */g).map((s) => parseFloat(s));
+	}
+
+	async _chooseBounds(container, def) {
+		let lowerDefault = (def && def[0]) || [ 0, 0 ];
+		let upperDefault = (def && def[1]) || [ 0, 0 ];
+
+		let formSchema = {
+			type: 'object',
+			label: 'Surface Map Probe Bounds',
+			properties: {
+				fromJob: {
+					type: 'mixed',
+					label: '[From Job]',
+					actionFn: async (info) => {
+						if (!this.newJobMode.jobFilename) throw new Error('No job filename configured');
+						let dryRunResults = await this.consoleui.runWithWait(async () => {
+							return await this.consoleui.client.op('jobDryRun', this.newJobMode.makeJobOptionsObj());
+						}, 'Processing job ...');
+						let bounds = objtools.getPath(dryRunResults, 'gcodeProcessors.final-job-vm.bounds');
+						if (bounds) {
+							info.obj.lower = bounds[0].slice(0, 2);
+							info.obj.upper = bounds[1].slice(0, 2);
+						}
+					}
+				},
+				lower: {
+					type: [ Number ],
+					label: 'Lower Bound',
+					default: lowerDefault,
+					editFn: async (container, _sd, val) => await this._editCoords(container, 'Lower Bound', val),
+					shortDisplayLabel: (val) => Array.isArray(val) ? val.join(',') : null
+				},
+				upper: {
+					type: [ Number ],
+					label: 'Upper Bound',
+					default: upperDefault,
+					editFn: async (container, _sd, val) => await this._editCoords(container, 'Upper Bound', val),
+					shortDisplayLabel: (val) => Array.isArray(val) ? val.join(',') : null
+				}
+			}
+		};
+		let form = new ListForm(this.consoleui);
+		let results = await form.showEditor(container, formSchema);
+		if (results && results.lower && results.upper) {
+			return [ results.lower, results.upper ];
+		} else {
+			return null;
+		}
+	}
+
+	async _newSurfaceMap(container) {
+		let formSchema = {
+			type: 'object',
+			label: 'New Surface Map',
+			doneLabel: '[Run Surface Map]',
+			properties: {
+				bounds: {
+					type: 'array',
+					elements: [ Number ],
+					label: 'Select Bounds',
+					editFn: async (container) => {
+						return await this._chooseBounds(container);
+					},
+					shortDisplayLabel: (val) => val ? val.map((a) => a.join(',')).join(' - ') : null,
+					required: true
+				},
+				surfaceMapFilename: {
+					type: 'string',
+					label: 'Save As',
+					default: 'surfacemap_' + new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '-') + '.smap.json',
+					normalize: (v) => {
+						if (!/.*\.smap\.json$/.test(v)) v += '.smap.json';
+						return v;
+					},
+					required: true
+				},
+				probeSpacing: {
+					type: Number,
+					label: 'Probe Spacing',
+					default: 10,
+					description: 'Maximum grid separation between probe points'
+				},
+				probeFeed: {
+					type: Number,
+					label: 'Probe Feedrate',
+					default: 25,
+					description: 'Feed rate for probing'
+				},
+				clearanceHeight: {
+					type: Number,
+					label: 'Clearance Height',
+					default: 2,
+					description: 'Clearance Z for moving across surface'
+				},
+				autoClearance: {
+					type: Boolean,
+					label: 'Enable Auto-Clearance',
+					default: true,
+					description: 'Whether to automatically adjust clearance height based on known probe points to optimize speed'
+				},
+				autoClearanceMin: {
+					type: Number,
+					label: 'Auto-Clearance Min Clearance',
+					default: 0.5,
+					description: 'Minimum amount of clearance when using autoClearance'
+				},
+				probeMinZ: {
+					type: Number,
+					label: 'Probe Z Cutoff',
+					default: -2,
+					description: 'Minimum Z value to probe toward.  Error if this Z is reached without the probe tripping.'
+				}
+			}
+		};
+		let form = new ListForm(this.consoleui);
+		let formResults = await form.showEditor(container, formSchema, undefined, { returnDefaultOnCancel: false });
+		if (!formResults) return null;
+
+		// TODO: add confirm dialog; run surface map
+
+		console.log('Form results', formResults);
+		return 'placeholder sufracemap file';
+	}
+
 	async _chooseSurfaceMap(container) {
+		let files = await this.consoleui.runWithWait(() => this.consoleui.client.op('listFiles'));
+		files = files.filter((f) => f.type !== 'gcode').map((f) => f.name);
 		let formSchema = {
 			label: 'AutoLevel Surface Map',
 			type: 'string',
-			enum: [
-				'[Create New]',
-				'file1',
-				'file2'
-			]
+			enum: [ '[Create New]' ].concat(files)
 		};
-		let form = new ListForm(this.consoleui.screen, formSchema);
-		return await form.showEditor(this.newJobMode.box);
+		let form = new ListForm(this.consoleui);
+		let file = await form.showEditor(container, formSchema, this.alOptions.surfaceMapFile);
+		if (!file) {
+			return this.alOptions.surfaceMapFile;
+		} else if (file === '[Create New]') {
+			let r = await this._newSurfaceMap(container);
+			return r ? r : this.alOptions.surfaceMapFile;
+		} else {
+			return file;
+		}
 	}
 
 	async _optionsForm(container) {
@@ -457,15 +602,14 @@ class AutolevelConsoleUIJobOption extends JobOption {
 				}
 			}
 		};
-		let form = new ListForm(this.consoleui.screen, formSchema);
-		let r = await form.showEditor(this.newJobMode.box, this.alOptions);
+		let form = new ListForm(this.consoleui);
+		let r = await form.showEditor(null, formSchema, this.alOptions);
 		if (r !== null) this.alOptions = r;
 		this.newJobMode.updateJobInfoText();
 	}
 
-	optionSelected() {
-		this._optionsForm()
-			.catch((err) => this.consoleui.clientError(err));
+	async optionSelected() {
+		await this._optionsForm();
 	}
 
 	getDisplayString() {

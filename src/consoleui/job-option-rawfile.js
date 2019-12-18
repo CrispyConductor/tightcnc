@@ -1,5 +1,6 @@
 const JobOption = require('./job-option');
 const blessed = require('blessed');
+const ListForm = require('./list-form');
 
 class JobOptionRawfile extends JobOption {
 
@@ -10,58 +11,9 @@ class JobOptionRawfile extends JobOption {
 	 *
 	 * @method optionSelected
 	 */
-	optionSelected() {
-		let containerBox = blessed.box({
-			width: 30,
-			border: {
-				type: 'line'
-			},
-			height: 7,
-			top: 'center',
-			left: 'center'
-		});
-		let boxTitle = blessed.box({
-			width: '100%',
-			height: 1,
-			align: 'center',
-			content: 'Send Raw File (No Analysis)'
-		});
-		containerBox.append(boxTitle);
-		let listBox = blessed.list({
-			style: {
-				selected: {
-					inverse: true
-				},
-				item: {
-					inverse: false
-				}
-			},
-			keys: true,
-			items: [ 'Off', 'On' ],
-			width: '100%-2',
-			height: '100%-3',
-			top: 1,
-			border: {
-				type: 'line'
-			}
-		});
-		containerBox.append(listBox);
-		listBox.select(this.rawFile ? 1 : 0);
-		this.newJobMode.box.append(containerBox);
-		listBox.focus();
-		listBox.once('select', () => {
-			this.rawFile = !!listBox.selected;
-			containerBox.remove(listBox);
-			this.newJobMode.box.remove(containerBox);
-			this.newJobMode.updateJobInfoText();
-			this.consoleui.render();
-		});
-		listBox.once('cancel', () => {
-			containerBox.remove(listBox);
-			this.newJobMode.box.remove(containerBox);
-			this.consoleui.render();
-		});
-		this.consoleui.render();
+	async optionSelected() {
+		let form = new ListForm(this.consoleui);
+		this.rawFile = await form.showEditor(null, { type: 'boolean', label: 'Raw File Sending Enabled' }, !!this.rawFile);
 	}
 
 	/**

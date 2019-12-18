@@ -9,6 +9,7 @@ class ConsoleUI extends EventEmitter {
 		super();
 		this.statusBoxes = [];
 		this.hints = [];
+		this.hintOverrideStack = [];
 		this.config = require('littleconf').getConfig();
 		this.hintBoxHeight = 3;
 		this.modes = {};
@@ -40,9 +41,25 @@ class ConsoleUI extends EventEmitter {
 		return hint;
 	}
 
-	addHint(keyNames, label) {
+	_makeHintStr(keyNames, label) {
 		if (!Array.isArray(keyNames)) keyNames = [ keyNames ];
-		this.hints.push(keyNames.map((n) => '{inverse}' + n + '{/inverse}').join('/') + ' ' + label);
+		return keyNames.map((n) => '{inverse}' + n + '{/inverse}').join('/') + ' ' + label;
+	}
+
+	// hints is in form: [ [ keyNames, label ], [ keyNames, label ], ... ]
+	pushHintOverrides(hints) {
+		let hintStrs = hints.map((a) => this._makeHintStr(a[0], a[1]));
+		this.hintOverrideStack.push(hintStrs);
+		this.updateHintBox();
+	}
+
+	popHintOverrides() {
+		this.hintOverrideStack.pop();
+		this.updateHintBox();
+	}
+
+	addHint(keyNames, label) {
+		this.hints.push(this._makeHintStr(keyNames, label));
 		this.updateHintBox();
 		return this.hints[this.hints.length - 1];
 	}
@@ -53,18 +70,20 @@ class ConsoleUI extends EventEmitter {
 	}
 
 	updateHintBox() {
-		if (!this.hints.length) {
+		let hints = this.hints;
+		if (this.hintOverrideStack.length) hints = this.hintOverrideStack[this.hintOverrideStack.length - 1];
+		if (!hints.length) {
 			this.bottomHintBox.setContent('');
 			return;
 		}
 		let totalWidth = this.bottomHintBox.width;
 		let rowHints = [];
-		let numRowsUsed = Math.min(Math.floor(this.hints.length / 6) + 1, this.hintBoxHeight);
-		let hintsPerRow = Math.ceil(this.hints.length / numRowsUsed);
+		let numRowsUsed = Math.min(Math.floor(hints.length / 6) + 1, this.hintBoxHeight);
+		let hintsPerRow = Math.ceil(hints.length / numRowsUsed);
 		let hintWidth = Math.floor(totalWidth / hintsPerRow);
 		let hintsToShow = [];
 		for (let i = 0; i < hintsPerRow * numRowsUsed; i++) {
-			hintsToShow[i] = this.hints[i] || '';
+			hintsToShow[i] = hints[i] || '';
 		}
 		let hintBoxContent = '';
 		for (let rowNum = 0; rowNum < numRowsUsed; rowNum++) {
@@ -83,6 +102,37 @@ class ConsoleUI extends EventEmitter {
 		this.bottomHintBox.setContent(hintBoxContent);
 		this.render();
 	}
+
+	async runInModal(fn, options = {}) {
+		let modal = blessed.box({
+			width: options.width || '80%',
+			height: options.height || '80%',
+			top: 'center',
+			left: 'center',
+			border: options.border ? { type: 'line' } : undefined
+			//border: { type: 'line' },
+			//content: 'MODAL CONTENT'
+		});
+		let container = options.container || this.mainPane;
+		container.append(modal);
+		modal.setFront();
+		this.screen.render();
+		try {
+			return await fn(modal);
+		} finally {
+			container.remove(modal);
+		}
+	}
+
+	async runWithWait(fn, text = 'Waiting ...') {
+		this.showWaitingBox(text);
+		try {
+			return await fn();
+		} finally {
+			this.hideWaitingBox();
+		}
+	}
+
 
 	/**
 	 * Adds a status box to the status box stack.

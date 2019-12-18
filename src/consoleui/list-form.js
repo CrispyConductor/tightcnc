@@ -5,17 +5,36 @@ const objtools = require('objtools');
 
 class ListForm {
 
-	constructor(screen, schema, options = {}) {
-		this.screen = screen;
+	constructor(consoleui, options = {}) {
+		if (consoleui.screen) {
+			this.consoleui = consoleui;
+			this.screen = consoleui.screen;
+		} else {
+			this.consoleui = null;
+			this.screen = consoleui;
+		}
 		this.options = options;
-		if (!Schema.isSchema(schema)) schema = createSchema(schema);
-		this.schema = schema;
 	}
 
-	async showEditor(container, defaultVal) {
-		let schemaData = this.schema.getData();
+	async showEditor(container, schema, defaultVal, options = {}) {
+		if (!container && this.consoleui) {
+			return await this.consoleui.runInModal(async (c) => {
+				return await this.showEditor(c, schema, defaultVal);
+			});
+		}
+		if (!Schema.isSchema(schema)) schema = createSchema(schema);
+		let schemaData = schema.getData();
 		if (defaultVal === undefined) defaultVal = schemaData.default;
-		let val = await this._editValue(container, schemaData, defaultVal);
+		let val = await this._editValue(container, schemaData, defaultVal, options);
+		if (val === null) { // On cancel
+			if (options.returnDefaultOnCancel === false) return null;
+			// Return default value only if default is valid
+			try {
+				val = schema.normalize(defaultVal);
+			} catch (e) {
+				return null;
+			}
+		}
 		return val;
 	}
 
@@ -43,27 +62,32 @@ class ListForm {
 
 	async _editValue(container, schemaData, value, options = {}) {
 		let r;
+		options = objtools.deepCopy(options);
+		options.normalize = (val) => {
+			return createSchema(schemaData).normalize(val);
+		};
 		try {
+			if (value === null || value === undefined) value = schemaData.default;
 			if (schemaData.editFn) {
 				r = await schemaData.editFn(container, schemaData, value, options);
 			} else if (schemaData.enum) {
-				r = await this._enumSelector(container, schemaData.title || schemaData.label || options.key || 'Select Value', schemaData.enum, value || schemaData.default, options);
+				r = await this._enumSelector(container, schemaData.title || schemaData.label || options.key || 'Select Value', schemaData.enum, value, options);
 			} else if (schemaData.type === 'boolean') {
-				r = await this._selector(container, schemaData.title || schemaData.label || options.key || 'False or True', [ 'FALSE', 'TRUE' ], schemaData.default ? 1 : 0, options);
+				r = await this.selector(container, schemaData.title || schemaData.label || options.key || 'False or True', [ 'FALSE', 'TRUE' ], value ? 1 : 0, options);
 				if (r !== null) r = !!r;
 			} else if (schemaData.type === 'object') {
-				r = await this._editObject(container, schemaData, value || schemaData.default || {}, options);
+				r = await this._editObject(container, schemaData, value || {}, options);
 			} else if (schemaData.type === 'string') {
-				r = await this._lineEditor(container, (schemaData.title || schemaData.label || options.key || 'Value') + ':', value, options);
+				r = await this.lineEditor(container, (schemaData.title || schemaData.label || options.key || 'Value') + ':', value, options);
 			} else if (schemaData.type === 'number') {
-				r = await this._lineEditor(container, (schemaData.title || schemaData.label || options.key || 'Value') + ':', value, options);
-				if (r !== null) {
+				options.normalize = (r) => {
 					if (!r.length || isNaN(r)) {
 						throw new Error('Must be valid number');
 					} else {
-						r = parseFloat(r);
+						return parseFloat(r);
 					}
-				}
+				};
+				r = await this.lineEditor(container, (schemaData.title || schemaData.label || options.key || 'Value') + ':', value, options);
 			} else {
 				throw new Error('Unsupported edit schema type');
 			}
@@ -80,9 +104,10 @@ class ListForm {
 		return r;
 	}
 
-	async _lineEditor(container, label, defaultValue = '', options = {}) {
+	async lineEditor(container, label, defaultValue = '', options = {}) {
 		if (defaultValue === null || defaultValue === undefined) defaultValue = '';
 		if (typeof defaultValue !== 'string') defaultValue = '' + defaultValue;
+		if (this.consoleui) this.consoleui.pushHintOverrides([ [ 'Esc', 'Cancel' ], [ 'Enter', 'Done' ] ]);
 
 		let outerBorder = blessed.box({
 			width: options.width || '80%',
@@ -122,6 +147,7 @@ class ListForm {
 		textbox.focus();
 
 		const cleanup = () => {
+			if (this.consoleui) this.consoleui.popHintOverrides();
 			innerBorder.remove(textbox);
 			outerBorder.remove(innerBorder);
 			container.remove(outerBorder);
@@ -137,6 +163,14 @@ class ListForm {
 
 		textbox.on('submit', () => {
 			let value = textbox.getValue();
+			if (options.normalize) {
+				try {
+					value = options.normalize(value);
+				} catch (err) {
+					this._message(container, err.message);
+					return;
+				}
+			}
 			cleanup();
 			waiter.resolve(value);
 		});
@@ -151,13 +185,17 @@ class ListForm {
 		if (value === null || value === undefined) value = schemaData.default;
 		if (value === undefined) value = null;
 		let keyStr = '' + (schemaData.label || schemaData.description || key);
+		if (typeof schemaData.shortDisplayLabel === 'function') {
+			value = schemaData.shortDisplayLabel(value, key, schemaData);
+		}
 		if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-			keyStr += ' - ' + value;
+			keyStr += ': ' + value;
 		}
 		return keyStr;
 	}
 
 	async _editObject(container, schemaData, value = {}, options = {}) {
+		value = objtools.deepCopy(value);
 		let keysByIndex = [];
 		let keyNames = [];
 		let keyStrs = [];
@@ -170,12 +208,20 @@ class ListForm {
 		}
 		let title = schemaData.title || schemaData.label || options.key || 'Edit Properties';
 
-		keyStrs.push('[Done]');
+		keyStrs.push(schemaData.doneLabel || '[Done]');
 
 		let totalNumItems = keyStrs.length;
 
-		let r = await this._selector(container, title, keyStrs, 0, options, async (selected, listBox) => {
+		let r = await this.selector(container, title, keyStrs, 0, options, async (selected, listBox) => {
 			if (selected === totalNumItems - 1) {
+				if (options.normalize) {
+					try {
+						value = options.normalize(value);
+					} catch (err) {
+						this._message(container, err.message);
+						return true;
+					}
+				}
 				return false;
 			}
 			let key = keysByIndex[selected];
@@ -183,15 +229,46 @@ class ListForm {
 			if (curValue === null || curValue === undefined) curValue = schemaData.properties[key].default;
 			let opts = objtools.deepCopy(schemaData.formOptions || {});
 			opts.key = key;
-			let newValue = await this._editValue(container, schemaData.properties[key], curValue, opts);
-			if (newValue !== null) {
-				value[key] = newValue;
-				listBox.setItem(selected, getEntryLabel(key, newValue));
+			if (schemaData.properties[key].actionFn) {
+				try {
+					await schemaData.properties[key].actionFn({
+						selectedIndex: selected,
+						selectedKey: key,
+						selectedCurValue: curValue,
+						opts,
+						listBox,
+						obj: value
+					});
+				} catch (err) {
+					await this._message(container, err.message);
+				}
+				for (let i = 0; i < keysByIndex.length; i++) {
+					listBox.setItem(i, getEntryLabel(keysByIndex[i], value[keysByIndex[i]]));
+				}
+				this.screen.render();
+				return true;
+			} else {
+				let newValue = await this._editValue(container, schemaData.properties[key], curValue, opts);
+				if (newValue !== null) {
+					value[key] = newValue;
+					listBox.setItem(selected, getEntryLabel(key, newValue));
+				}
+				this.screen.render();
+				return true;
 			}
-			this.screen.render();
-			return true;
 		});
-		if (r === null) return r;
+		if (r === null) {
+			if (options.returnDefaultOnCancel === false) return null;
+			// NOTE: Hitting Esc while editing an object still counts as editing the object if fields
+			// have been modified, unless the object fails validation
+			if (options.normalize) {
+				try {
+					value = options.normalize(value);
+				} catch (e) {
+					return null;
+				}
+			}
+		}
 		return value;
 	}
 
@@ -199,12 +276,12 @@ class ListForm {
 		let strValues = values.map((v) => '' + v);
 		let defaultIdx = (defaultValue === undefined) ? 0 : values.indexOf(defaultValue);
 		if (defaultIdx === -1) defaultIdx = 0;
-		let selectedIdx = await this._selector(container, title, strValues, defaultIdx, options);
+		let selectedIdx = await this.selector(container, title, strValues, defaultIdx, options);
 		if (selectedIdx === null || selectedIdx === undefined) return null;
 		return values[selectedIdx];
 	}
 
-	_selector(container, title, items, defaultSelected = 0, options = {}, handler = null) {
+	selector(container, title, items, defaultSelected = 0, options = {}, handler = null) {
 		// Container box
 		let listContainer = blessed.box({
 			width: options.width || '100%',
@@ -246,12 +323,15 @@ class ListForm {
 		container.append(listContainer);
 		listBox.focus();
 
+		if (this.consoleui) this.consoleui.pushHintOverrides([ [ 'Esc', 'Cancel' ], [ 'Up/Down', 'Select' ], [ 'Enter', 'Done' ] ]);
+
 		let waiter = pasync.waiter();
 
 		// Need to support 2 modes:
 		// Either select a single option then resolve, or allow repeated calls to a handler, and exit on handler return false or cancel (escape)
 
 		const cleanup = () => {
+			if (this.consoleui) this.consoleui.popHintOverrides();
 			listContainer.remove(listBox);
 			container.remove(listContainer);
 			this.screen.render();

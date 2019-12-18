@@ -136,17 +136,21 @@ class ModeNewJob extends ConsoleUIMode {
 		containerBox.append(listBox);
 		this.box.append(containerBox);
 		listBox.focus();
-		listBox.once('select', () => {
-			this.box.remove(containerBox);
+		listBox.on('select', () => {
+			//this.box.remove(containerBox);
 			let optionName = optionNames[listBox.selected];
 			if (!this.jobOptionInstances[optionName]) {
 				let cls = this.consoleui.jobOptionClasses[optionName];
 				this.jobOptionInstances[optionName] = new cls(this.consoleui);
 			}
-			this.jobOptionInstances[optionName].optionSelected();
+			let r = this.jobOptionInstances[optionName].optionSelected();
+			if (r && typeof r.then === 'function') {
+				r.catch((err) => this.clientError(err))
+				r.then(() => listBox.focus());
+			}
 			this.consoleui.render();
 		});
-		listBox.once('cancel', () => {
+		listBox.on('cancel', () => {
 			containerBox.remove(listBox);
 			this.box.remove(containerBox);
 			this.consoleui.render();
