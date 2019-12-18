@@ -424,6 +424,67 @@ class AutolevelConsoleUIJobOption extends JobOption {
 		};
 	}
 
+	async _runProbeSequence(params) {
+		let container = this.consoleui.mainPane;
+		let initStatus = await this.consoleui.runWithWait(async () => {
+			return await this.consoleui.client.op('probeSurface', formResults);
+		});
+		let probeInfoBox = blessed.box({
+			width: '50%',
+			height: '40%',
+			top: 'center',
+			left: 'center',
+			border: { type: 'line' },
+			keyable: true,
+			align: 'center',
+			valign: 'middle',
+			content: ''
+		});
+		container.append(probeInfoBox);
+		probeInfoBox.focus();
+		let origGrabKeys = this.consoleui.screen.grabKeys;
+		this.consoleui.screen.grabKeys = true;
+		
+		const updateProbeInfo = (probeStatus) => {
+			probeInfoBox.content = 'Probing surface ...\nState: ' + probeStatus.state + '\nPoint ' + probeStatus.currentProbePoint + '/' + probeStatus.probePoints + ' (' + Math.floor(probeStatus.percentComplete) + '%)';
+			if (probeStatus.state === 'error' && probeStatus.error) probeInfoBox.content += '\nError: ' + probeStatus.error;
+			this.consoleui.render();
+		};
+
+		updateProbeInfo(initStatus);
+		let finished = initStatus.state !== 'running';
+		let retVal = null;
+
+		return await new Promise((resolve, reject) => {
+			const statusUpdateHandler = (status) => {
+				updateProbeInfo(status.probeSurface || {});
+				if (!finished && status.probeSurface.state !== 'running') {
+					finished = true;
+					this.consoleui.popHintOverrides();
+					this.consoleui.pushHintOverrides([ [ 'Esc', 'Close' ] ]);
+					if (status.probeSurface.state === 'complete') {
+						retVal = params.surfaceMapFilename;
+					}
+				}
+			};
+			const cleanup = () => {
+				this.consoleui.removeListener('statusUpdate', statusUpdateHandler);
+				container.remove(probeInfoBox);
+				this.consoleui.popHintOverrides();
+				this.consoleui.screen.grabKeys = origGrabKeys;
+			};
+			this.consoleui.on('statusUpdate', statusUpdateHandler);
+			this.consoleui.pushHintOverrides([ [ 'Esc', 'Cancel' ] ]);
+			probeInfoBox.key([ 'escape' ], () => {
+				if (!finished) {
+					this.consoleui.client.op('cancel', {}).catch((err) => this.consoleui.clientError(err));
+				}
+				cleanup();
+				resolve(retVal);
+			});
+		});
+	}
+
 	async _editCoords(container, label, def) {
 		let form = new ListForm(this.consoleui);
 		let defaultStr;
@@ -562,11 +623,12 @@ class AutolevelConsoleUIJobOption extends JobOption {
 		if (!confirmed) return null;
 
 		// TODO: add ability to feed hold and cancel
-		await this.consoleui.runWithWait(async () => {
-			return await this.consoleui.client.op('probeSurface', formResults);
-		}, 'Probing ...');
+		//await this.consoleui.runWithWait(async () => {
+		//	return await this.consoleui.client.op('probeSurface', formResults);
+		//}, 'Probing ...');
+		return await this._runProbeSequence(formResults);
 
-		return formResults.surfaceMapFilename;
+		//return formResults.surfaceMapFilename;
 	}
 
 	async _chooseSurfaceMap(container) {
