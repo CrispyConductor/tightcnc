@@ -556,11 +556,17 @@ class AutolevelConsoleUIJobOption extends JobOption {
 		let form = new ListForm(this.consoleui);
 		let formResults = await form.showEditor(container, formSchema, undefined, { returnDefaultOnCancel: false });
 		if (!formResults) return null;
+		commonSchema.createSchema(formSchema).normalize(formResults);
 
-		// TODO: add confirm dialog; run surface map
+		let confirmed = await this.consoleui.showConfirm('Press Enter to start probing.', { okLabel: 'Start' }, container);
+		if (!confirmed) return null;
 
-		console.log('Form results', formResults);
-		return 'placeholder sufracemap file';
+		// TODO: add ability to feed hold and cancel
+		await this.consoleui.runWithWait(async () => {
+			return await this.consoleui.client.op('probeSurface', formResults);
+		}, 'Probing ...');
+
+		return formResults.surfaceMapFilename;
 	}
 
 	async _chooseSurfaceMap(container) {
@@ -613,8 +619,20 @@ class AutolevelConsoleUIJobOption extends JobOption {
 	}
 
 	getDisplayString() {
-		if (this.alOptions.enabled) return 'AutoLevel enabled';
+		if (this.alOptions.enabled && this.alOptions.surfaceMap) return 'AutoLevel: ' + this.alOptions.surfaceMap;
 		else return null;
+	}
+
+	addToJobOptions(obj) {
+		if (this.alOptions.enabled && this.alOptions.surfaceMap) {
+			if (!obj.gcodeProcessors) obj.gcodeProcessors = [];
+			obj.gcodeProcessors.push({
+				name: 'autolevel',
+				options: {
+					surfaceMapFilename: this.alOptions.surfaceMap
+				}
+			});
+		}
 	}
 
 }

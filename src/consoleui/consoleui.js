@@ -133,6 +133,40 @@ class ConsoleUI extends EventEmitter {
 		}
 	}
 
+	async showConfirm(content, options = {}, container = null) {
+		if (!container) container = this.mainPane;
+		let box = blessed.box({
+			width: '50%',
+			height: '30%',
+			top: 'center',
+			left: 'center',
+			align: 'center',
+			valign: 'middle',
+			keyable: true,
+			content: content,
+			border: { type: 'line' }
+		});
+		let origGrabKeys = this.screen.grabKeys;
+		let r = await new Promise((resolve, reject) => {
+			this.pushHintOverrides([ [ 'Esc', options.cancelLabel || 'Cancel' ], [ 'Enter', options.okLabel || 'OK' ] ]);
+			box.key([ 'escape' ], () => {
+				resolve(false);
+			});
+			box.key([ 'enter' ], () => {
+				resolve(true);
+			});
+			container.append(box);
+			this.render();
+			box.focus();
+			this.screen.grabKeys = true;
+		});
+		this.popHintOverrides();
+		container.remove(box);
+		this.screen.grabKeys = origGrabKeys;
+		this.screen.render();
+		return r;
+	}
+
 
 	/**
 	 * Adds a status box to the status box stack.
@@ -398,6 +432,7 @@ class ConsoleUI extends EventEmitter {
 	}
 
 	updatePrimaryStatusBoxes(status) {
+		if (!status) return;
 		let cstatus = status.controller;
 
 		// Machine state
