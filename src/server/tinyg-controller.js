@@ -714,7 +714,7 @@ class TinyGController extends Controller {
 		this.sendQueue = [];
 		this.responseWaiterQueue = [];
 		this.responseWaiters = [];
-		this.linesToSend = 6; // note: tinyg docs recommend 4, with a max of 8; 6 is used here for slightly better performance with lots of short moves
+		this.linesToSend = 4;
 		this._waitingForSync = false;
 		this._disableSending = false;
 	}
