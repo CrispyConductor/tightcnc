@@ -12,6 +12,7 @@ const { MoveSplitter } = require('./move-splitter');
 const JobOption = require('../consoleui/job-option');
 const ListForm = require('../consoleui/list-form');
 const blessed = require('blessed');
+const moment = require('moment');
 
 
 class SurfaceLevelMap {
@@ -194,8 +195,8 @@ function startProbeSurface(tightcnc, options) {
 			let pointNumX = Math.floor(pointNum / probePointsY);
 			let pointNumY = pointNum - pointNumX * probePointsY;
 			if (pointNumX % 2 === 1) pointNumY = probePointsY - 1 - pointNumY;
-			let pointPosX = pointNumX * spacingX;
-			let pointPosY = pointNumY * spacingY;
+			let pointPosX = pointNumX * spacingX + startPoint[0];
+			let pointPosY = pointNumY * spacingY + startPoint[1];
 
 			// Calculate the clearance height to get to this point.  If autoClearance is disabled, this is just the predefined
 			// clearance.  For autoClearance, the height is determined by predicting the height of the next point and adding autoClearanceMin.
@@ -224,8 +225,8 @@ function startProbeSurface(tightcnc, options) {
 		}
 
 		// Probing complete.  Move back to full clearance, and the lower bound XY
-		sendMove([ null, null, options.clearanceHeight ]);
-		sendMove([ lowerBound[0], lowerBound[1], null ]);
+		sendMove(null, null, options.clearanceHeight);
+		sendMove(lowerBound[0], lowerBound[1], null);
 
 		// Save the probing results
 		surfaceProbeResults = {
@@ -453,12 +454,15 @@ class AutolevelConsoleUIJobOption extends JobOption {
 
 		updateProbeInfo(initStatus);
 		let finished = initStatus.state !== 'running';
+		let startedRunning = false;
 		let retVal = null;
 
 		return await new Promise((resolve, reject) => {
 			const statusUpdateHandler = (status) => {
-				updateProbeInfo(status.probeSurface || {});
-				if (!finished && status.probeSurface.state !== 'running') {
+				if (!status.probeSurface) return;
+				updateProbeInfo(status.probeSurface);
+				if (status.probeSurface.state === 'running') startedRunning = true;
+				if (!finished && startedRunning && status.probeSurface.state !== 'running') {
 					finished = true;
 					this.consoleui.popHintOverrides();
 					this.consoleui.pushHintOverrides([ [ 'Esc', 'Close' ] ]);
@@ -569,7 +573,7 @@ class AutolevelConsoleUIJobOption extends JobOption {
 				surfaceMapFilename: {
 					type: 'string',
 					label: 'Save As',
-					default: 'surfacemap_' + new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '-') + '.smap.json',
+					default: 'surfacemap_' + moment().format('YYYY-MM-DD_HH-mm') + '.smap.json',
 					normalize: (v) => {
 						if (!/.*\.smap\.json$/.test(v)) v += '.smap.json';
 						return v;
