@@ -2,7 +2,11 @@ const Controller = require('./controller');
 const SerialPort = require('serialport');
 const XError = require('xerror');
 const pasync = require('pasync');
+const GcodeLine = require('../../lib/gcode-line');
+const AbbrJSON = require('./tinyg-abbr-json');
 const gcodeParser = require('gcode-parser');
+const CrispHooks = require('crisphooks');
+
 
 // Wrapper on top of gcode-parser to parse a line and return a map from word keys to values
 function gparse(line) {
@@ -15,21 +19,77 @@ function gparse(line) {
 	return r;
 }
 
+/**
+ * This is the controller interface class for TinyG.
+ *
+ * This class can be roughly separated into a few interconnected parts:
+ * 1. Code for communicating with the TinyG
+ * 2. Code for maintaining a local copy of machine state as closely as possible
+ * 3. Utility functions for specific operations and implementations of the base class
+ *
+ * The communications algorithms is basically this:
+ * - A sendQueue is stored.  This contains not only entries that have yet to be sent, but also entries that have been sent but not yet executed.  Each entry
+ *   corresponds to a gcode line (or other single-line instruction) and contains some metadata relating to the line (including hooks).
+ * - Several "pointers" into the sendQueue are maintained.  These are properties pointing to an index in the sendQueue.  These are:
+ *   - The index into sendQueue of the next entry to send, but hasn't been sent yet.  This can be equal to the length of the array to indicate there are no
+ *     currently queued entries to send. (sendQueueIdxToSend)
+ *   - The index into the sendQueue of the next entry for which a response is expected.  If this is equal to sendQueueIdxToSend, then there
+ *     have been no entries sent for which we've received no response. (sendQueueIdxToReceive)
+ *   - The value of sendQueueIdxToReceive at the time we received the most recent (triple) queue report.  This is used to track which entries in the
+ *     device's planner queue correspond to the entries in sendQueue. (sendQueueIdxToRecvAtLastQr)
+ * - These pointers must be maintained to "track" the proper entries whenever something is spliced into or removed from the queue.
+ * - Additionally, a "mirror" copy of the device's expected planner queue is maintained.  This plannerMirror contains entries corresponding to entries
+ *   in the device's planner queue (based on queue reports), each containing a range of gcode lines (in sendQueue) that could have resulted in that planner
+ *   queue entry.  This is needed because queue report synchronization may not be 100% deterministic.
+ * - When a response is received for a request, the response hooks are executed, and sendQueueIdxToReceive is incremented.
+ * - When a (triple) queue report is received, the information in qi and qo is used to push and pop entries off of plannerMirror.  Entries popped off the front
+ *   are ones that have completed execution.  Entries pushed on the back correspond to gcode lines for which responses have been received since the last queue report.
+ * - More data is sent when there are enough free buffers between the planner queue and the serial receive buffer.  This is tracked by storing the number of free planner buffers
+ *   returned since the last queue report and deducting buffers based on how many responses we have yet to receive since the last queue report.
+ *
+ * @class TinyGController
+ */
 class TinyGController extends Controller {
 
 	constructor(config = {}) {
-		// Configuration for sending data that could potentially overflow the serial buffer to improve speed, but could impact responsiveness.
-		// EXPERIMENTAL
-		if (config.oversend === undefined) config.oversend = false; // whether to enable oversending
-		if (config.oversendLimit === undefined) config.oversendLimit = 20; // max number to send without receiving responses over the standard threshold
-		if (config.oversendPlannerMinAvailable === undefined) config.oversendPlannerMinAvailable = 12; // minimum number of spots to leave open in planner queue when oversending
-
 		super(config);
 		this.serial = null; // Instance of SerialPort stream interface class
-		this.sendQueue = []; // Queue of data lines to send
-		this.linesToSend = 0; // Number of lines we can currently reasonably send without filling the receive buffer
-		this.responseWaiterQueue = []; // Queue of pasync waiters to be resolved when responses are received to lines; indexes match those of this.sendQueue
-		this.responseWaiters = []; // pasync waiters for lines currently "in flight" (sent and waiting for response)
+
+		// This send queue serves multiple different purposes.  It contains entries that have not yet been sent, entries that have been sent but have not yet had responses
+		// received, and entries that have had responses received but are still in the device's planner queue.  Entries in this queue are objects with several properties:
+		// - str - The string of the raw line to send.  Should not include newline at end.
+		// - hooks - Optional instance of CrispHooks.  If exists, the following hooks are called:
+		//   - queued - When the entry is first pushed onto the send queue.
+		//   - sent - When the entry is sent to the controller.
+		//   - ack - When the controller acknowledges that it received the line.
+		//   - executing - (Approximately) when the line begins to execute.
+		//   - executed - (Approximately) when the line has been executed.  For control lines and some gcode lines, this is at the same time as ack.  For movement and other
+		//     gcode lines, this is fired when it has been estimated to have cleared the planner queue.
+		//   - error - If an error occurs prior to the line being executed.
+		// - lineid - A generated absolute line ID that increments and does not reset.  This is not the same as a gcode line number.
+		// - gcode - If this is gcode, a GcodeLine instance representing this line.
+		// - goesToPlanner - A boolean value that indicates whether this line goes to the planner queue (as opposed to being executed immediately when received)
+		// Note that the sendQueue does not contain "front panel control" instructions like feed hold, as these are sent and processed immediately, and give no feedback.
+		this.sendQueue = [];
+		// This is the index into sendQueue of the next entry to send to the device.  Can be 1 past the end of the queue if there are no lines queued to be sent.
+		this.sendQueueIdxToSend = 0;
+		// This is the index into sendQueue of the next entry that has been sent but a response is expected for.
+		this.sendQueueIdxToReceive = 0;
+		// This array mirrors the device's planner queue.  Each entry is a range [ low, high ] (inclusive) of 0 or more gcode line ids that we think correspond to
+		// that planner queue entry (such that the gcode line's execute hook will fire after it's pushed off the planner queue).
+		this.plannerMirror = [];
+		// This is the value of sendQueueIdxToReceive at the time that the more recent queue report was received (adjusted for shifting off the front of the queue)
+		this.sendQueueIdxToRecvAtLastQr = 0;
+		// Number of planner queue buffers free as off last received queue report
+		this.lastQrNumFree = 28;
+		// Number of blocks in sendQueue to send immediately even if it would exceed normal backpressure
+		this.sendImmediateCounter = 0;
+
+		// Counter storing the next free line id to use
+		this.lineIdCounter = 1;
+
+		this.synced = true;
+
 		this.axisLabels = [ 'x', 'y', 'z', 'a', 'b', 'c' ];
 		this.usedAxes = config.usedAxes || [ true, true, true, false, false, false ];
 		this.homableAxes = config.homableAxes || [ true, true, true ];
@@ -46,6 +106,441 @@ class TinyGController extends Controller {
 		this.realTimeMovesCounter = [ 0, 0, 0, 0, 0, 0 ];
 
 		this._serialListeners = {}; // mapping from serial port event names to listener functions; used to remove listeners during cleanup
+	}
+
+	// Resets all the communications-related state variables, and errors out any in-flight requests
+	_commsReset(err = null) {
+		if (!err) err = new XError(XError.INTERNAL_ERROR, 'Communications reset');
+		// Call the error hook on anything in sendQueue
+		for (let entry of this.sendQueue) {
+			if (entry.hooks) {
+				entry.hooks.triggerSync('error', err);
+			}
+		}
+		// Reset all the variables
+		this.sendQueue = [];
+		this.sendQueueIdxToSend = 0;
+		this.sendQueueIdxToReceive = 0;
+		this.plannerMirror = [];
+		this.sendQueueIdxToRecvAtLastQr = 0;
+		this.lastQrNumFree = 28;
+	}
+
+	// Calls executing hooks corresponding to front entry in planner mirror
+	_commsCallExecutingHooks() {
+		let lineidRange = this.plannerMirror[0];
+		if (lineidRange) {
+			let topLineId = lineidRange[1]; // max line id inclusive
+			// Call hook on each line in the send queue until we've exceeded the top line id
+			let sqIdx = 0;
+			while (sqIdx < this.sendQueue.length && this.sendQueue[sqIdx].lineid <= topLineId) {
+				let sqEntry = this.sendQueue[sqIdx];
+				sqIdx++;
+				// run hooks if present
+				if (sqEntry.hooks) {
+					sqEntry.hooks.triggerSync('executing', sqEntry);
+				}
+			}
+		}
+	}
+
+	// Removes everything in plannerMirror, resolving all the hooks for entries in it
+	_commsSyncPlannerMirror() {
+		while (this.plannerMirror.length > 0) {
+			this._commsShiftPlannerMirror();
+		}
+	}
+
+	// Marks the front entry of the planner queue as executed and shifts it off the queue
+	_commsShiftPlannerMirror() {
+		// Shift off the front entry of the planner queue, and handle each line id range
+		let lineidRange = this.plannerMirror.shift();
+		if (lineidRange) {
+			let topLineId = lineidRange[1]; // max line id to "resolve", inclusive
+			// Resolve each line in the send queue until we've exceeded the top line id
+			while (this.sendQueue.length > 0 && this.sendQueue[0].lineid <= topLineId) {
+				let sqEntry = this.sendQueue.shift();
+				// run hooks if present
+				if (sqEntry.hooks) {
+					sqEntry.hooks.triggerSync('executed', sqEntry);
+				}
+				// adjust pointers after shifting
+				this.sendQueueIdxToSend--;
+				this.sendQueueIdxToReceive--;
+				this.sendQueueIdxToRecvAtLastQr--;
+			}
+		}
+		// Call executing hooks corresponding to next planner queue entry
+		if (this.plannerMirror.length > 0) {
+			this._commsCallExecutingHooks();
+		}
+	}
+
+	// Communications-related code for when a queue report is received from the device
+	_commsHandleQueueReportReceived(queueReport) {
+		let { qr, qi, qo } = queueReport;
+		// For each entry pushed onto the planner since the last report, push onto the mirror planner.
+		// Each of these entries should correspond to 0 or more gcode line IDs.
+		// The range of gcode lines in the queue that correspond to this range of qi is sendQueueIdxToRecvAtLastQr (inclusive) to sendQueueIdxToReceive (exclusive)
+		let sendQueueIdxRangeStart = this.sendQueueIdxToRecvAtLastQr;
+		let sendQueueIdxRangeEnd = this.sendQueueIdxToReceive;
+		for (let qiCtr = 0; qiCtr < qi; qiCtr++) {
+			let qisLeft = qi - qiCtr;
+			let sendQueuesLeft = sendQueueIdxRangeEnd - sendQueueIdxRangeStart;
+			let numGcodesThisQi = Math.floor(sendQueuesLeft / qisLeft);
+			if (numGcodesThisQi === 0) {
+				this.plannerMirror.push(null);
+				continue;
+			}
+			let lineIdStart = this.sendQueue[sendQueueIdxRangeStart].lineid;
+			let lineIdEnd = this.sendQueue[sendQueueIdxRangeStart + numGcodesThisQi - 1].lineid;
+			this.plannerMirror.push([ lineIdStart, lineIdEnd ]);
+			if (this.plannerMirror.length === 1) {
+				this._commsCallExecutingHooks();
+			}
+			sendQueueIdxRangeStart += numGcodesThisQi;
+		}
+		// For each entry pulled off the planner queue:
+		// - Run the executed hook for any gcode line ids corresponding to that entry at the front of sendQueue; and shift off each of those gcode entries
+		// - Shift it off our planner queue mirror
+		// - Update the various indexes into sendQueue
+		// TODO: figure out these below comments, and a reasonable way of handling desyncs
+		// As a special case (to handle a weird issue where sometimes things can get "stuck" in the planner queue), if the machine has stopped, assume all .... but this could break with desync?? - handle this elsewhere
+		// 	When receive status report, if machine is stopped, but have received responses for everything, then shift off the rest of the planner mirror.
+		// Also, maybe check if qr doesn't match our planner mirror size and do something?  Maybe check something against number of free queue entries too? ... also needs to be handled when machine is stopped and synced
+		let plannerEntriesToShift = qo;
+		// Make sure we're not shifting off more than the total size of our planner queue
+		if (plannerEntriesToShift > this.plannerMirror.length) plannerEntriesToShift = this.plannerMirror.length;
+		while (plannerEntriesToShift > 0) {
+			this._commsShiftPlannerMirror();
+			plannerEntriesToShift--;
+		}
+
+		// Store qr so we know how many free queue entries there are
+		this.lastQrNumFree = qr;
+		// Update this pointer
+		this.sendQueueIdxToRecvAtLastQr = this.sendQueueIdxToReceive;
+		// See if we can send more stuff
+		this._checkSendLoop();
+	}
+
+	// Communications-related code for when a {r:...} response is received from the device
+	// Should be called with the full response line (ie, it should contain a property 'r')
+	_commsHandleAckResponseReceived(r) {
+		// Make sure we're actually expecting a response.  If not, assume it's a bug (like with probing) and just
+		// ignore the response.
+		if (this.sendQueueIdxToSend <= this.sendQueueIdxToReceive) return;
+		let responseStatusCode = r.f ? r.f[1] : 0;
+		// Fire off the ack hook
+		let entry = this.sendQueue[this.sendQueueIdxToReceive];
+		if (entry.hooks) entry.hooks.triggerSync('ack', entry, r);
+		if (responseStatusCode === 0) {
+			// If we're not expecting this to go onto the planner queue, splice it out of the list now.  Otherwise,
+			// increment the receive pointer.
+			if (entry.goesToPlanner) {
+				this.sendQueueIdxToReceive++;
+			} else {
+				this.sendQueue.splice(this.sendQueueIdxToReceive, 1);
+				this.sendQueueIdxToSend--; // need to adjust this for the splice
+				if (entry.hooks) {
+					entry.hooks.triggerSync('executing', entry);
+					entry.hooks.triggerSync('executed', entry);
+				}
+			}
+		} else {
+			// Got an error on the request.  Splice it out of sendQueue, and call the error hook on the gcode line
+			this.sendQueue.splice(this.sendQueueIdxToReceive, 1);
+			this.sendQueueIdxToSend--; // need to adjust this for the splice
+			if (entry.hooks) {
+				entry.hooks.triggerSync('error', new XError(XError.INTERNAL_ERROR, 'Received error code from request to TinyG: ' + responseStatusCode));
+			}
+		}
+		this._checkSendLoop();
+	}
+
+	// Checks the send queue to see if there's anything more that can be sent to the device.  Returns true if it can.
+	_checkSendToDevice() {
+		if (this._waitingForSync || this._disableSending) return false; // don't send anything more until state has synchronized
+		// We can send more if either 1) The serial receive buffer is filled less than 4 lines (recommended as per tinyg docs), or 2) The planner
+		// queue is expected to have fewer than 24 entries in it
+		// The number of slots in the receive buffer expected to be filled is equal to the number of responses we have not yet received for requests.
+		let receiveBufferFilled = this.sendQueueIdxToSend - this.sendQueueIdxToReceive;
+		const receiveBufferMaxFill = 4;
+		if (receiveBufferFilled < receiveBufferMaxFill) return true;
+		// Check how many planner buffers are free.  We start with the number free as of the last qr and deduct the worse case
+		// scenario of buffers per line.  Send more lines if there's room for 1 more gcode line in the planner buffer.
+		const maxPlannerBuffersPerLine = 4;
+		let effeciveFreePlannerBuffers = this.lastQrNumFree - (this.sendQueueIdxToSend - this.sendQueueIdxToRecvAtLastQr) * maxPlannerBuffersPerLine;
+		return effectiveFreePlannerBuffers >= maxPlannerBuffersPerLine;
+	}
+
+	_checkSendLoop() {
+		while ((this.sendImmediateCounter > 0 || this._checkSendToDevice()) && this.sendQueueIdxToSend < this.sendQueue.length) {
+			let entry = this.sendQueue[this.sendQueueIdxToSend];
+			this._writeToSerial(entry.str + '\n');
+			if (entry.hooks) {
+				entry.hooks.triggerSync('sent', entry);
+			}
+			this.emit('sent', entry.str);
+			this.sendQueueIdxToSend++;
+			if (this.sendImmediateCounter > 0) this.sendImmediateCounter--;
+		}
+		this._checkSynced();
+	}
+
+	// Pushes a block of data onto the send queue.  The block is in the format of send queue entries.  This function cannot be used with
+	// front-panel controls (ie, feed hold).  Lineid is added.
+	_sendBlock(block, immediate = false) {
+		if (immediate) {
+			this._sendBlockImmediate(block);
+			return;
+		}
+		block.lineid = this.lineIdCounter++;
+		this.sendQueue.push(block);
+		if (block.hooks) block.hooks.triggerSync('queued', block);
+		this._checkSendLoop();
+	}
+
+	// Pushes a block onto the sendQueue such that it will be next to be sent, and force it to be sent immediately.
+	_sendBlockImmediate(block) {
+		// Need to insert the block immediately after the most recently sent block
+		// Determine the line id based on its position
+		let newLineId;
+		let sendQueueIdxLastSent = this.sendQueueIdxToSend - 1;
+		if (sendQueueIdxLastSent < 0) {
+			// The most recently sent block has already been shifted off the sendQueue
+			if (this.sendQueue.length) {
+				// There are more entries queued to be sent; pick a lineid a bit below the the next block to be sent
+				newLineId = this.sendQueue[0].lineid - 0.5;
+			} else {
+				// There are no more entries queued to be sent; increment the id counter as normal
+				newLineId = this.lineIdCounter++;
+			}
+		} else {
+			// We know the lineid of the last sent block
+			let lineidLastSent = this.sendQueue[sendQueueIdxLastSent].lineid;
+			if (this.sendQueue.length > this.sendQueueIdxToSend) {
+				// There are more entries queued to be sent
+				let lineidNextSent = this.sendQueue[this.sendQueueIdxToSend].lineid;
+				newLineId = (lineidNextSent - lineidLastSent) / 2;
+			} else {
+				// There are not yet any more entries queued to be sent
+				newLineId = this.lineIdCounter++;
+			}
+		}
+		block.lineid = newLineId;
+
+		// Insert the block where it needs to go in the send queue (as the next to send)
+		this.sendQueue.splice(this.sendQueueIdxToSend, 0, block);
+		if (block.hooks) block.hooks.triggerSync('queued', block);
+
+		// Force sending this block
+		this.sendImmediateCounter++;
+		this._checkSendLoop();
+	}
+
+	// This function is called when a gcode line starts executing on the controller.  It is
+	// responsible for updating any local state properties based on that gcode line.
+	_updateStateFromGcode(gline) {
+		/* gcodes to watch for:
+		 * G10 L2 - Changes coordinate system offsets
+		 * G20/G21 - Select between inches and mm
+		 * G28.1/G30.1 - Changes stored position
+		 * G28.2 - Changes axis homed flags
+		 * G28.3 - Also homes
+		 * G54-G59 - Changes active coordinate system
+		 * G90/G91 - Changes absolute/incremental
+		 * G92* - Sets offset
+		 * M2/M30 - In addition to ending program (handled by status reports), also changes others https://github.com/synthetos/TinyG/wiki/Gcode-Support#m2-m30-program-end
+		 * M3/M4/M5 - Changes spindle state
+		 * M7/M8/M9 - Changes coolant state
+		*/
+
+		let zeropoint = [];
+		for (let i = 0; i < this.axisLabels.length; i++) zeropoint.push(0);
+		let G = gline.get('G');
+		let M = gline.get('M');
+
+		if (G === 10 && gline.has('L2') && gline.has('P')) {
+			let csys = gline.get('P') - 1;
+			if (!this.coordSysOffsets[csys]) this.coordSysOffsets[csys] = zeropoint;
+			for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) {
+				let axis = this.axisLabels[axisNum].toUpperCase();
+				if (gline.has(axis)) this.coordSysOffsets[csys][axisNum] = gline.get(axis);
+			}
+			this.emit('statusUpdate');
+		}
+		if (G === 20 || G === 21) {
+			this.units = (G === 20) ? 'in' : 'mm';
+			this.emit('statusUpdate');
+		}
+		if (G === 28.1 || G === 30.1) {
+			let posnum = (G === 28.1) ? 0 : 1;
+			this.storedPositions[posnum] = this.mpos.slice();
+			this.emit('statusUpdate');
+		}
+		if (G === 28.2 || G === 28.3) {
+			for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) {
+				let axis = this.axisLabels[axisNum].toUpperCase();
+				if (gline.has(axis)) this.homed[axisNum] = true;
+			}
+			this.emit('statusUpdate');
+		}
+		if (G >= 54 && G <= 59 && Math.floor(G) === G) {
+			this.activeCoordSys = G - 54;
+			this.emit('statusUpdate');
+		}
+		if (G === 90 || G === 91) {
+			this.incremental = G !== 90;
+			this.emit('statusUpdate');
+		}
+		if (G === 92) {
+			if (!this.offset) this.offset = zeropoint;
+			for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) {
+				let axis = this.axisLabels[axisNum].toUpperCase();
+				if (gline.has(axis)) this.offset[axisNum] = gline.get(axis);
+			}
+			this.offsetEnabled = true;
+			this.emit('statusUpdate');
+		}
+		if (G === 92.1) {
+			this.offset = zeropoint;
+			this.offsetEnabled = false;
+			this.emit('statusUpdate');
+		}
+		if (G === 92.2) {
+			this.offsetEnabled = false;
+			this.emit('statusUpdate');
+		}
+		if (G === 92.3) {
+			this.offsetEnabled = true;
+			this.emit('statusUpdate');
+		}
+		if (G === 93 || G === 94) {
+			this.inverseFeed = G === 93;
+			this.emit('statusUpdate');
+		}
+		if (M === 2 || M === 30) {
+			this.offset = zeropoint;
+			this.offsetEnabled = false;
+			this.activeCoordSys = 0;
+			this.incremental = false;
+			this.spindle = false;
+			this.coolant = false;
+			this.emit('statusUpdate');
+			this.sendLine({ coor: null }, { immediate: true });
+			this.sendLine({ unit: null }, { immediate: true });
+		}
+		if (M === 3 || M === 4 || M === 5) {
+			this.spindle = (M === 5) ? false : true;
+			this.spindleDirection = (M === 4) ? -1 : 1;
+			this.spindleSpeed = gline.get('S') || null;
+			this.emit('statusUpdate');
+		}
+		if (M === 7 || M === 8 || M === 9) {
+			if (M === 7) this.coolant = 1;
+			else if (M === 8) this.coolant = 2;
+			else this.coolant = false;
+			this.emit('statusUpdate');
+		}
+	}
+
+	sendGcode(gline, options = {}) {
+		let hooks = options.hooks || (gline.triggerSync ? gline : new CrispHooks());
+		hooks.hookSync('executing', () => this._updateStateFromGcode(gline));
+		this._sendBlock({
+			str: gline.toString(),
+			hooks: hooks,
+			gcode: gline,
+			goesToPlanner: this._gcodeLineRequiresPlanner(gline)
+		}, options.immediate);
+	}
+
+	sendLine(str, options = {}) {
+		// Check for "immediate commands" like feed hold that don't go into the queue
+		if (this._isImmediateCommand(str)) {
+			this._writeToSerial(str);
+			return;
+		}
+		// If not a string, jsonify it
+		if (typeof str !== 'string') str = AbbrJSON.stringify(str);
+		// If it doesn't start with {, try to parse as gcode
+		if (str.length && str[0] !== '{') {
+			let gcode = null;
+			try {
+				gcode = new GcodeLine(str);
+			} catch (err) {}
+			if (gcode) {
+				this.sendGcode(gcode, options);
+				return;
+			}
+		}
+		// If can't parse as gcode (or starts with {), send as plain string
+		this._sendBlock({
+			str: str,
+			hooks: options.hooks,
+			gcode: null,
+			goesToPlanner: false
+		}, options.immediate);
+	}
+
+	// Returns true if we think the given gcode line will get pushed onto the TinyG planner queue
+	_gcodeLineRequiresPlanner(gline) {
+		let containsCoordinates = false;
+		for (let label of this.axisLabels) {
+			if (gline.has(label)) {
+				containsCoordinates = true;
+				break;
+			}
+		}
+		// If it contains coordinates without a non-motion G word, assume it goes to the planner queue
+		if (
+			containsCoordinates &&
+			!gline.has('G10') &&
+			!gline.has('G28.2') &&
+			!gline.has('G28.3') &&
+			!gline.has('G92')
+		) {
+			return true;
+		}
+		// Check for other words that indicate it goes to the planner queue
+		if (
+			gline.has('G4') ||
+			gline.has('G28') ||
+			gline.has('G28.1') ||
+			gline.has('G30') ||
+			gline.has('G30.1') ||
+			gline.has('M')
+		) {
+			return true;
+		}
+		return false;
+	}
+
+	_writeToSerial(str) {
+		this.serial.write(str);
+	}
+
+	_isImmediateCommand(str) {
+		return str === '!' || str === '%' || str === '~' || str === '\x18';
+	}
+
+	// Returns a promise that resolves when the line is received.  The promise resolves with the full response (ie, it's an object containing 'r').
+	request(line) {
+		return new Promise((resolve, reject) => {
+			let hooks = new CrispHooks();
+			let resolved = false;
+			hooks.hookSync('ack', (entry, response) => {
+				if (resolved) return;
+				resolved = true;
+				resolve(response);
+			});
+			hooks.hookSync('error', (err) => {
+				if (resolved) return;
+				resolved = true;
+				reject(err);
+			});
+		});
 	}
 
 	initConnection(retry = true) {
@@ -87,7 +582,7 @@ class TinyGController extends Controller {
 			// Initialize serial buffers and initial variables
 			this.serialReceiveBuf = '';
 			this.currentStatusReport = {};
-			this._resetSerialState();
+			this._commsReset();
 
 			// Set up serial port communications handlers
 			const onSerialError = (err) => {
@@ -192,213 +687,27 @@ class TinyGController extends Controller {
 	}
 
 	_numInFlightRequests() {
-		return this.responseWaiters.length;
+		return this.sendQueue.length - this.sendQueueIdxToReceive;
 	}
 
-	// Send as many lines as we can from the send queue
-	_doSend() {
-		if (this._waitingForSync || this._disableSending) return; // don't send anything more until state has synchronized
-		let curLinesToSend = this.linesToSend;
-		if (this.config.oversend && this.plannerQueueSize) {
-			let plannerNumToSend = this.plannerQueueFree - this.oversendPlannerMinAvailable;
-			if (plannerNumToSend > curLinesToSend) {
-				let curMaxOversend =  this.oversendLimit + curLinesToSend;
-				if (plannerNumToSend > curMaxOversend) plannerNumToSend = curMaxOversend;
-				if (plannerNumToSend > curLinesToSend) curLinesToSend = plannerNumToSend;
+	// Check to see if the machine state is synchronized to local state, and the machine stopped.
+	_checkSynced() {
+		// The machine is considered to be synced when all of:
+		// 1. The machine is stopped (the last status report indicated a machine status of such)
+		// 2. There are no sent lines for which responses have not been received.
+		// 3. There is nothing queued to be sent (or sending is paused)
+		let wasSynced = this.synced;
+		let nowSynced = (this.currentStatusReport.stat === 3 || this.currentStatusReport.stat === 4 || this.currentStatusReport.stat === 1) &&
+			this.sendQueueIdxToReceive >= this.sendQueueIdxToSend &&
+			(this.sendQueueIdxToSend >= this.sendQueue.length || this._disableSending);
+		if (nowSynced !== wasSynced) {
+			if (nowSynced) {
+				// Extra check to automatically call hooks on all gcode blocks in the planner when the machine stops
+				this._commsSyncPlannerMirror();
 			}
+			this.synced = nowSynced;
+			this.emit('statusUpdate');
 		}
-		while (curLinesToSend >= 1 && this.sendQueue.length >= 1) {
-			this._sendImmediate(this.sendQueue.shift(), this.responseWaiterQueue.shift());
-			curLinesToSend--;
-		}
-	}
-
-	// Add a line to the send queue.  Return a promise that resolves when the response is received.
-	sendWait(line) {
-		let waiter = pasync.waiter();
-		this.sendQueue.push(line);
-		this.responseWaiterQueue.push(waiter);
-		this._doSend();
-		return waiter.promise;
-	}
-
-	// Immediately send a line to the device, bypassing the send queue
-	_sendImmediate(line, responseWaiter = null) {
-		if (!this.serial) throw new XError(XError.COMM_ERROR, 'Not connected');
-		if (typeof line !== 'string') line = JSON.stringify(line);
-		line = line.trim();
-		// Check if should decrement linesToSend (if not !, %, etc)
-		if (line === '!' || line === '%' || line === '~' || line === '\x18') {
-			this.serial.write(line);
-			if (responseWaiter) responseWaiter.reject(new XError(XError.INVALID_ARGUMENT, 'Cannot wait for response on control character'));
-		} else {
-			// Check if this line will require any synchronization of state
-			let stateSyncInfo = this._checkGCodeUpdateState(line);
-			if (stateSyncInfo) {
-				if (stateSyncInfo[1] && stateSyncInfo[1].length) {
-					// There's additional gcode to send immediately after this
-					let extraToSend = stateSyncInfo[1];
-					this.sendQueue.unshift(...extraToSend);
-				}
-				if (stateSyncInfo[0]) {
-					// There's a function to execute after the response is received
-					if (!responseWaiter) responseWaiter = pasync.waiter();
-					responseWaiter.promise.then(() => stateSyncInfo[0](), () => {});
-				}
-			}
-
-			this.serial.write(line + '\n');
-			this.linesToSend--;
-			this.responseWaiters.push(responseWaiter);
-		}
-		this.emit('sent', line);
-	}
-
-	// Push a line onto the send queue to be sent when buffer space is available
-	send(line) {
-		if (!this.serial) throw new XError(XError.COMM_ERROR, 'Not connected');
-		this.sendQueue.push(line);
-		this.responseWaiterQueue.push(null);
-		this._doSend();
-	}
-
-	// Checks to see if the line of gcode should update stored state once executed.  This must be called in order
-	// on all gcode sent to the device.  If the gcode line should update stored state, this returns a function that
-	// should be called after the response is received for the gcode line.  It may also return (as the second element
-	// of an array) a list of commands to send immediately after this gcode to ensure state is updated.
-	_checkGCodeUpdateState(line) {
-		let wordmap = gparse(line);
-		if (!wordmap) return null;
-		/* gcodes to watch for:
-		 * G10 L2 - Changes coordinate system offsets
-		 * G20/G21 - Select between inches and mm
-		 * G28.1/G30.1 - Changes stored position
-		 * G28.2 - Changes axis homed flags
-		 * G28.3 - Also homes
-		 * G54-G59 - Changes active coordinate system
-		 * G90/G91 - Changes absolute/incremental
-		 * G92* - Sets offset
-		 * M2/M30 - In addition to ending program (handled by status reports), also changes others https://github.com/synthetos/TinyG/wiki/Gcode-Support#m2-m30-program-end
-		 * M3/M4/M5 - Changes spindle state
-		 * M7/M8/M9 - Changes coolant state
-		*/
-		let fn = null;
-		let sendmore = [];
-
-		let zeropoint = [];
-		for (let i = 0; i < this.axisLabels.length; i++) zeropoint.push(0);
-
-		if (wordmap.G === 10 && wordmap.L === 2 && wordmap.P) {
-			fn = () => {
-				let csys = wordmap.P - 1;
-				if (!this.coordSysOffsets[csys]) this.coordSysOffsets[csys] = zeropoint;
-				for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) {
-					let axis = this.axisLabels[axisNum].toUpperCase();
-					if (axis in wordmap) this.coordSysOffsets[csys][axisNum] = wordmap[axis];
-				}
-				this.emit('statusUpdate');
-			};
-		}
-		if (wordmap.G === 20 || wordmap.G === 21) {
-			fn = () => {
-				this.units = (wordmap.G === 20) ? 'in' : 'mm';
-				this.emit('statusUpdate');
-			};
-		}
-		if (wordmap.G === 28.1 || wordmap.G === 30.1) {
-			fn = () => {
-				let posnum = (wordmap.G === 28.1) ? 0 : 1;
-				this.storedPositions[posnum] = this.mpos.slice();
-				this.emit('statusUpdate');
-			};
-		}
-		if (wordmap.G === 28.2 || wordmap.G === 28.3) {
-			fn = () => {
-				for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) {
-					let axis = this.axisLabels[axisNum].toUpperCase();
-					if (axis in wordmap) this.homed[axisNum] = true;
-				}
-				this.emit('statusUpdate');
-			};
-		}
-		if (wordmap.G >= 54 && wordmap.G <= 59 && Math.floor(wordmap.G) === wordmap.G) {
-			fn = () => {
-				this.activeCoordSys = wordmap.G - 54;
-				this.emit('statusUpdate');
-			};
-		}
-		if (wordmap.G === 90 || wordmap.G === 91) {
-			fn = () => {
-				this.incremental = !(wordmap.G === 90);
-				this.emit('statusUpdate');
-			};
-		}
-		if (wordmap.G === 92) {
-			fn = () => {
-				if (!this.offset) this.offset = zeropoint;
-				for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) {
-					let axis = this.axisLabels[axisNum].toUpperCase();
-					if (axis in wordmap) this.offset[axisNum] = wordmap[axis];
-				}
-				this.offsetEnabled = true;
-				this.emit('statusUpdate');
-			};
-		}
-		if (wordmap.G === 92.1) {
-			fn = () => {
-				this.offset = zeropoint;
-				this.offsetEnabled = false;
-				this.emit('statusUpdate');
-			};
-		}
-		if (wordmap.G === 92.2) {
-			fn = () => {
-				this.offsetEnabled = false;
-				this.emit('statusUpdate');
-			};
-		}
-		if (wordmap.G === 92.3) {
-			fn = () => {
-				this.offsetEnabled = true;
-				this.emit('statusUpdate');
-			};
-		}
-		if (wordmap.G === 93 || wordmap.G === 94) {
-			fn = () => {
-				this.inverseFeed = wordmap.G === 93;
-				this.emit('statusUpdate');
-			};
-		}
-		if (wordmap.M === 2 || wordmap.M === 30) {
-			fn = () => {
-				this.offset = zeropoint;
-				this.offsetEnabled = false;
-				this.activeCoordSys = 0;
-				this.incremental = false;
-				this.spindle = false;
-				this.coolant = false;
-				this.emit('statusUpdate');
-			};
-			sendmore.push({ coor: null }, { unit: null });
-		}
-		if (wordmap.M === 3 || wordmap.M === 4 || wordmap.M === 5) {
-			fn = () => {
-				this.spindle = (wordmap.M === 5) ? false : true;
-				this.spindleDirection = (wordmap.M === 4) ? -1 : 1;
-				this.spindleSpeed = wordmap.S || null;
-				this.emit('statusUpdate');
-			};
-		}
-		if (wordmap.M === 7 || wordmap.M === 8 || wordmap.M === 9) {
-			fn = () => {
-				if (wordmap.M === 7) this.coolant = 1;
-				else if (wordmap.M === 8) this.coolant = 2;
-				else this.coolant = false;
-			};
-		}
-
-		if (!fn && !sendmore.length) return null;
-		return [ fn, sendmore ];
 	}
 
 	async waitSync() {
@@ -407,11 +716,12 @@ class TinyGController extends Controller {
 		if (this._disableSending) {
 			await pasync.setTimeout(250);
 		} else {
-			await this.sendWait({ sr: null });
+			await this.request({ sr: null });
 		}
-		// If the planner queue is empty, and we're not currently moving, then should be good
-		if (!this.moving && this.plannerQueueFree === this.plannerQueueSize && !this.sendQueue.length && !this.responseWaiters.length) return Promise.resolve();
-		// Otherwise, register a listener for status changes, and resolve when these conditions are met
+
+		if (this.synced) return;
+
+		// register a listener for status changes, and resolve when these conditions are met
 		await new Promise((resolve, reject) => {
 			if (this.error) return reject(new XError(XError.MACHINE_ERROR, 'Machine error code: ' + this.errorData));
 			let removeListeners;
@@ -421,11 +731,11 @@ class TinyGController extends Controller {
 					this._waitingForSync = false;
 					removeListeners();
 					reject(new XError(XError.MACHINE_ERROR, 'Machine error code: ' + this.errorData));
-				} else if (!this.moving && this.plannerQueueFree === this.plannerQueueSize && !this.sendQueue.length && !this.responseWaiters.length) {
+				} else if (this.synced) {
 					this._waitingForSync = false;
 					removeListeners();
 					resolve();
-					this._doSend();
+					this._checkSendLoop();
 				}
 			};
 			const cancelRunningOpsHandler = (err) => {
@@ -435,13 +745,9 @@ class TinyGController extends Controller {
 			};
 			removeListeners = () => {
 				this.removeListener('statusUpdate', statusHandler);
-				this.removeListener('sent', statusHandler);
-				this.removeListener('afterReceived', statusHandler);
 				this.removeListener('cancelRunningOps', cancelRunningOpsHandler);
 			};
-			this.on('statusUpdate', statusHandler); // main listener we're interested in
-			this.on('sent', statusHandler); // these two are for edge cases (things that change sendQueue or responseWaiters without statusUpdate)
-			this.on('afterReceived', statusHandler);
+			this.on('statusUpdate', statusHandler);
 			this.on('cancelRunningOps', cancelRunningOpsHandler);
 		});
 	}
@@ -449,7 +755,7 @@ class TinyGController extends Controller {
 	_handleReceiveSerialDataLine(line) {
 		this.emit('received', line);
 		if (line[0] != '{') throw new XError(XError.PARSE_ERROR, 'Errror parsing received serial line', { data: line });
-		let data = JSON.parse(line);
+		let data = AbbrJSON.parse(line);
 
 		// Check if this is a SYSTEM READY response indicating a reset
 		if ('r' in data && data.r.msg === 'SYSTEM READY') {
@@ -481,10 +787,15 @@ class TinyGController extends Controller {
 			// Update queue report
 			statusVars.qr = data.qr;
 		}
+		let queueReport = null;
+		if ('qr' in data && 'qi' in data && 'qo' in data) {
+			queueReport = data;
+		}
 		for (let key in this.currentStatusReport) {
 			if (key in data) statusVars[key] = data[key];
 			if ('r' in data && key in data['r']) statusVars[key] = data['r'][key];
 		}
+		let responseStatusCode = null;
 		if ('r' in data) {
 			if ('sr' in data.r) {
 				// Update the current status variables
@@ -498,31 +809,25 @@ class TinyGController extends Controller {
 				// Update queue number
 				statusVars.qr = data.r.qr;
 			}
+			//if ('qr' in data.r && 'qi' in data.r && 'qo' in data.r) {
+			//	queueReport = data.r;
+			//}
+
 			// Update status properties
 			this._updateStatusReport(statusVars);
 			// Check if successful or failure response
-			let statusCode = data.f ? data.f[1] : 0;
-			// If there are no response waiter entries (including nulls), it means a response was received without an associated request.
-			// This seems to occur during probing on my current firmware version (see comment in probe()).  Ignore such responses.
-			if (this.responseWaiters.length) {
-				// Update lines to send counter
-				this.linesToSend++;
-				let responseWaiter = this.responseWaiters.shift();
-				if (responseWaiter) {
-					// status codes: https://github.com/synthetos/TinyG/wiki/TinyG-Status-Codes
-					if (statusCode === 0) {
-						responseWaiter.resolve(data);
-					} else {
-						responseWaiter.reject(new XError(XError.MACHINE_ERROR, 'TinyG error status code: ' + statusCode));
-					}
-				}
-			}
-			// Try to send more data
-			this._doSend();
+			responseStatusCode = data.f ? data.f[1] : 0;
+			// Handle comms and sending more data when a response is received
+			this._commsHandleAckResponseReceived(data);
+			this._checkSynced();
 		} else {
 			this._updateStatusReport(statusVars);
 		}
 		this.emit('afterReceived', line);
+		// If queue report information was received, update our communications state info accordingly
+		if (queueReport) {
+			this._commsHandleQueueReportReceived(queueReport);
+		}
 	}
 
 	// Update stored state information with the given status report information
@@ -639,6 +944,7 @@ class TinyGController extends Controller {
 		if (statusUpdated && emitEvent) {
 			this.emit('statusUpdate');
 		}
+		this._checkSynced();
 	}
 
 	// Fetch and update current status from machine, if vars is null, update all
@@ -658,7 +964,7 @@ class TinyGController extends Controller {
 		let sr = {};
 		let promises = [];
 		const fetchVar = (name) => {
-			let p = this.sendWait({ [name]: null })
+			let p = this.request({ [name]: null })
 				.then((data) => {
 					sr[name] = data.r[name];
 				});
@@ -676,24 +982,24 @@ class TinyGController extends Controller {
 	// Send serial commands to initialize machine and state after new serial connection
 	async _initMachine() {
 		// Strict json syntax.  Needed to parse with normal JSON parser.  Change this if abbreviated json parser is implemented.
-		await this.sendWait({ js: 1 });
+		await this.request({ js: 1 });
 		// Echo off (ideally this would be set at the same time as the above)
-		await this.sendWait({ ee: 0 });
+		await this.request({ ee: 0 });
 		// Set json output verbosity
-		await this.sendWait({ jv: 4 });
+		await this.request({ jv: 4 });
 		// Enable (filtered) automatic status reports
-		await this.sendWait({ sv: 1});
-		// Enable queue reports
-		await this.sendWait({ qv: 1 });
+		await this.request({ sv: 1});
+		// Enable triple queue reports
+		await this.request({ qv: 2 });
 		// Set automatic status report interval
-		await this.sendWait({ si: this.config.statusReportInterval || 250 });
+		await this.request({ si: this.config.statusReportInterval || 250 });
 		// Configure status report fields
-		//await this.sendWait({ sr: false }); // to work with future firmware versions where status report variables are configured incrementally
+		//await this.request({ sr: false }); // to work with future firmware versions where status report variables are configured incrementally
 		let srVars = [ 'n', 'feed', 'stat' ];
 		for (let axis of this.axisLabels) { srVars.push('mpo' + axis); }
 		let srConfig = {};
 		for (let name of srVars) { srConfig[name] = true; }
-		await this.sendWait({ sr: srConfig });
+		await this.request({ sr: srConfig });
 		// Fetch initial state
 		await this._fetchStatus(null, false);
 		// Set the planner queue size to the number of free entries (it's currently empty)
@@ -702,7 +1008,8 @@ class TinyGController extends Controller {
 		for (let axisNum = 0; axisNum < this.usedAxes.length; axisNum++) {
 			if (this.usedAxes[axisNum]) {
 				let axis = this.axisLabels[axisNum];
-				let response = await this.sendWait({ [axis + 'vm']: null });
+				let response = await this.request({ [axis + 'vm']: null });
+				if (response.r) response = response.r;
 				if (typeof response[axis + 'vm'] === 'number') {
 					this.axisMaxFeeds[axisNum] = response[axis + 'vm'];
 				}
@@ -710,35 +1017,23 @@ class TinyGController extends Controller {
 		}
 	}
 
-	_resetSerialState() {
-		this.sendQueue = [];
-		this.responseWaiterQueue = [];
-		this.responseWaiters = [];
-		this.linesToSend = 4;
-		this._waitingForSync = false;
-		this._disableSending = false;
-	}
-
 	sendStream(stream) {
 		let waiter = pasync.waiter();
 
-		let dataBuf = '';
-		// Bounds within which to stop and start reading from the stream
+		// Bounds within which to stop and start reading from the stream.  These correspond to the number of queued lines
+		// not yet sent to the controller.
 		let sendQueueHighWater = this.config.streamSendQueueHighWaterMark || 5;
 		let sendQueueLowWater = this.config.streamSendQueueLowWaterMark || Math.min(10, Math.floor(sendQueueHighWater / 5));
 		let streamPaused = false;
 		let canceled = false;
 
-		const sendLines = (lines) => {
-			for (let line of lines) {
-				line = line.trim();
-				if (line) this.send(line);
-			}
+		const numUnsentLines = () => {
+			return this.sendQueue.length - this.sendQueueIdxToSend;
 		};
 
 		const sentListener = () => {
 			// Check if paused stream can be resumed
-			if (streamPaused && this.sendQueue.length <= sendQueueLowWater) {
+			if (numUnsentLines() <= sendQueueLowWater) {
 				stream.resume();
 				streamPaused = false;
 			}
@@ -764,19 +1059,10 @@ class TinyGController extends Controller {
 
 		stream.on('data', (chunk) => {
 			if (canceled) return;
-			if (typeof chunk !== 'string') chunk = chunk.toString('utf8');
-			dataBuf += chunk;
-			let lines = dataBuf.split(/\r?\n/);
-			if (lines[lines.length - 1] !== '') {
-				// does not end in newline, so the last component goes back in the buf
-				dataBuf = lines.pop();
-			} else {
-				lines.pop();
-				dataBuf = '';
-			}
-			sendLines(lines);
+			if (!chunk) return;
+			this.send(chunk);
 			// if send queue is too full, pause the stream
-			if (this.sendQueue.length >= sendQueueHighWater) {
+			if (numUnsentLines() >= sendQueueHighWater) {
 				stream.pause();
 				streamPaused = true;
 			}
@@ -784,7 +1070,6 @@ class TinyGController extends Controller {
 
 		stream.on('end', () => {
 			if (canceled) return;
-			sendLines(dataBuf.split(/\r?\m/));
 			this.removeListener('sent', sentListener);
 			this.removeListener('cancelRunningOps', cancelHandler);
 			this.waitSync()
@@ -797,35 +1082,31 @@ class TinyGController extends Controller {
 	}
 
 	_cancelRunningOps(err) {
-		for (let p of this.responseWaiterQueue) if (p) p.reject(err);
-		for (let p of this.responseWaiters) if (p) p.reject(err);
+		this._commsReset(err);
+		this._checkSynced();
 		this.emit('cancelRunningOps', err);
-		this.sendQueue = [];
-		this.responseWaiterQueue = [];
-		this.responseWaiters = [];
 	}
 
 	hold() {
-		this._sendImmediate('!');
+		this.sendLine('!');
 		this.paused = true;
 	}
 
 	resume() {
-		this._sendImmediate('~');
+		this.sendLine('~');
 		this.paused = false;
 	}
 
 	cancel() {
 		if (!this.paused) this.hold();
 		this._cancelRunningOps(new XError(XError.CANCELLED, 'Operation cancelled'));
-		this._sendImmediate('%');
+		this.sendLine('%');
 		this.paused = false;
-		this._resetSerialState();
 	}
 
 	reset() {
 		this._cancelRunningOps(new XError(XError.CANCELLED, 'Machine reset'));
-		this._sendImmediate('\x18');
+		this.sendLine('\x18');
 		this.ready = false; // will be set back to true once SYSTEM READY message received
 	}
 
@@ -837,7 +1118,7 @@ class TinyGController extends Controller {
 				gcode += ' ' + this.axisLabels[axisNum].toUpperCase() + '0';
 			}
 		}
-		await this.sendWait(gcode);
+		await this.request(gcode);
 		await this.waitSync();
 	}
 
@@ -848,7 +1129,7 @@ class TinyGController extends Controller {
 				gcode += ' ' + this.axisLabels[axisNum].toUpperCase() + pos[axisNum];
 			}
 		}
-		await this.sendWait(gcode);
+		await this.request(gcode);
 		await this.waitSync();
 	}
 
@@ -871,6 +1152,22 @@ class TinyGController extends Controller {
 		let gcode = 'G0 ' + this.axisLabels[axisNum].toUpperCase() + inc;
 		this.send(gcode);
 		this.send('G90');
+	}
+
+	_sendImmediate(line, waiter = null) {
+		let hooks = new CrispHooks();
+		this.send(line, { immediate: true, hooks: hooks });
+		let resolved = false;
+		hooks.hookSync('ack', (_entry, r) => {
+			if (resolved) return;
+			resolved = true;
+			waiter.resolve(r);
+		});
+		hooks.hookSync('error', (err) => {
+			if (resolved) return;
+			resolved = true;
+			waiter.reject(err);
+		});
 	}
 
 	async probe(pos, feed = null) {
@@ -1045,7 +1342,7 @@ class TinyGController extends Controller {
 		} finally {
 			this._disableSending = false;
 			this._disableResponseErrorEvent = false;
-			this._doSend();
+			this._checkSendLoop();
 		}
 	}
 

@@ -1,6 +1,7 @@
 const EventEmitter = require('events');
 const XError = require('xerror');
 const fs = require('fs');
+const zstreams = require('zstreams');
 
 class Controller extends EventEmitter {
 
@@ -133,35 +134,31 @@ class Controller extends EventEmitter {
 	 */
 	initConnection(retry = true) {}
 
-	/**
-	 * Sends a (gcode) line to the controller.  Should parse the line to update machine state if necessary.
-	 *
-	 * @method send
-	 * @param {String} line - Line to send.
-	 */
-	send(line) {}
+	sendLine(line, options={}) {}
+
+	sendGcode(gline, options={}) {}
+
+	send(thing, options={}) {
+		if (typeof thing === 'object' && thing.isGcodeLine) {
+			this.sendGcode(thing, options);
+		} else {
+			this.sendLine(thing, options);
+		}
+	}
 
 	/**
-	 * Sends a line to the controller.  Resolves a promise once the line has been processed.  (Not necessarily if action
-	 * is completed - just processed.  So should not be used to check if movement is completed.
-	 *
-	 * @method sendWait
-	 * @param {String} line
-	 * @return {Promise}
-	 */
-	sendWait(line) {}
-
-	/**
-	 * Streams a file or other string to the controller, as in send().  Should only resolve once whole stream has been executed.
+	 * Streams lines to the controller, as in send().  Should only resolve once whole stream has been executed.
 	 *
 	 * @method sendStream
-	 * @param {ReadableString} stream - Readable character stream
+	 * @param {ReadableString} stream - Readable object stream.  Each object can either be a string (without a newline - newlines should be
+	 *   added), or an instance of GcodeLine.
 	 * @return {Promise} - Resolves when whole stream has been sent, and movements processed.
 	 */
 	sendStream(stream) {}
 
 	sendFile(filename) {
-		return this.sendStream(fs.createReadStream(filename));
+		let stream = zstreams.fromFile(filename).pipe(new zstreams.SplitStream());
+		return this.sendStream(stream);
 	}
 
 	/**
