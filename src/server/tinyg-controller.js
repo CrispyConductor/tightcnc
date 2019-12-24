@@ -68,7 +68,7 @@ class TinyGController extends Controller {
 		//   - error - If an error occurs prior to the line being executed.
 		// - lineid - A generated absolute line ID that increments and does not reset.  This is not the same as a gcode line number.
 		// - gcode - If this is gcode, a GcodeLine instance representing this line.
-		// - goesToPlanner - A boolean value that indicates whether this line goes to the planner queue (as opposed to being executed immediately when received)
+		// - goesToPlanner - A boolean value that indicates how many entries this is expected to take on the planner queue (round up to highest estimate)
 		// Note that the sendQueue does not contain "front panel control" instructions like feed hold, as these are sent and processed immediately, and give no feedback.
 		this.sendQueue = [];
 		// This is the index into sendQueue of the next entry to send to the device.  Can be 1 past the end of the queue if there are no lines queued to be sent.
@@ -289,6 +289,10 @@ class TinyGController extends Controller {
 	// Checks the send queue to see if there's anything more that can be sent to the device.  Returns true if it can.
 	_checkSendToDevice() {
 		if (this._waitingForSync || this._disableSending) return false; // don't send anything more until state has synchronized
+		// Don't send more if we haven't received responses for more than a threshold number
+		const maxUnackedRequests = 36;
+		let numUnackedRequests = this.sendQueueIdxToSend - this.sendQueueIdxToReceive;
+		if (numUnackedRequests >= maxUnackedRequests) return false;
 		// We can send more if either 1) The serial receive buffer is filled less than 4 lines (recommended as per tinyg docs), or 2) The planner
 		// queue is expected to have fewer than 24 entries in it
 		// The number of slots in the receive buffer expected to be filled is equal to the number of responses we have not yet received for requests.
@@ -297,9 +301,15 @@ class TinyGController extends Controller {
 		if (receiveBufferFilled < receiveBufferMaxFill) return true;
 		// Check how many planner buffers are free.  We start with the number free as of the last qr and deduct the worse case
 		// scenario of buffers per line.  Send more lines if there's room for 1 more gcode line in the planner buffer.
-		const maxPlannerBuffersPerLine = 4;
-		let effectiveFreePlannerBuffers = this.lastQrNumFree - (this.sendQueueIdxToSend - this.sendQueueIdxToRecvAtLastQr) * maxPlannerBuffersPerLine;
-		return effectiveFreePlannerBuffers >= maxPlannerBuffersPerLine;
+		let effectiveFreePlannerBuffers = this.lastQrNumFree;
+		// for each unacked line sent since the last queue report, deduce the number of planner queue entries it's expected to use
+		// TODO: track this count as a separate state variable to avoid doing this loop every time
+		for (let i = this.sendQueueIdxToRecvAtLastQr; i < this.sendQueueIdxToSend && i < this.sendQueue.length; i++) {
+			effectiveFreePlannerBuffers -= this.sendQueue[i].goesToPlanner;
+		}
+		// send another line if that line is expected to fit in planner queue
+		let nextLinePlannerBuffers = (this.sendQueueIdxToSend < this.sendQueue.length) ? this.sendQueue[this.sendQueueIdxToSend].goesToPlanner : 4;
+		return effectiveFreePlannerBuffers >= nextLinePlannerBuffers;
 	}
 
 	_checkSendLoop() {
@@ -508,7 +518,7 @@ class TinyGController extends Controller {
 			str: str,
 			hooks: options.hooks,
 			gcode: null,
-			goesToPlanner: false
+			goesToPlanner: 0
 		}, options.immediate);
 	}
 
@@ -521,6 +531,10 @@ class TinyGController extends Controller {
 				break;
 			}
 		}
+		// If it contains coordinates along with simple linear motion, assume it takes a single planner queue entry
+		if (containsCoordinates && (gline.has('G0') || gline.has('G1'))) {
+			return 1;
+		}
 		// If it contains coordinates without a non-motion G word, assume it goes to the planner queue
 		if (
 			containsCoordinates &&
@@ -529,7 +543,7 @@ class TinyGController extends Controller {
 			!gline.has('G28.3') &&
 			!gline.has('G92')
 		) {
-			return true;
+			return 4;
 		}
 		// Check for other words that indicate it goes to the planner queue
 		if (
@@ -540,7 +554,7 @@ class TinyGController extends Controller {
 			gline.has('G30.1') ||
 			gline.has('M')
 		) {
-			return true;
+			return 4;
 		}
 		return false;
 	}
