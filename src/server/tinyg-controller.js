@@ -204,10 +204,6 @@ class TinyGController extends Controller {
 		// - Run the executed hook for any gcode line ids corresponding to that entry at the front of sendQueue; and shift off each of those gcode entries
 		// - Shift it off our planner queue mirror
 		// - Update the various indexes into sendQueue
-		// TODO: figure out these below comments, and a reasonable way of handling desyncs
-		// As a special case (to handle a weird issue where sometimes things can get "stuck" in the planner queue), if the machine has stopped, assume all .... but this could break with desync?? - handle this elsewhere
-		// 	When receive status report, if machine is stopped, but have received responses for everything, then shift off the rest of the planner mirror.
-		// Also, maybe check if qr doesn't match our planner mirror size and do something?  Maybe check something against number of free queue entries too? ... also needs to be handled when machine is stopped and synced
 		let plannerEntriesToShift = qo;
 		// Make sure we're not shifting off more than the total size of our planner queue
 		if (plannerEntriesToShift > this.plannerMirror.length) plannerEntriesToShift = this.plannerMirror.length;
@@ -540,6 +536,7 @@ class TinyGController extends Controller {
 				resolved = true;
 				reject(err);
 			});
+			this.send(line, { hooks: hooks });
 		});
 	}
 
