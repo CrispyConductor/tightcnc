@@ -179,6 +179,7 @@ class TinyGController extends Controller {
 	// Communications-related code for when a queue report is received from the device
 	_commsHandleQueueReportReceived(queueReport) {
 		let { qr, qi, qo } = queueReport;
+		// --- HANDLE qi ---
 		// For each entry pushed onto the planner since the last report, push onto the mirror planner.
 		// Each of these entries should correspond to 0 or more gcode line IDs.
 		// The range of gcode lines in the queue that correspond to this range of qi is sendQueueIdxToRecvAtLastQr (inclusive) to sendQueueIdxToReceive (exclusive)
@@ -200,16 +201,47 @@ class TinyGController extends Controller {
 			}
 			sendQueueIdxRangeStart += numGcodesThisQi;
 		}
+		// Edge case (shouldn't really happen) for if qi is 0 (no entries pushed onto the planner queue since last queue report)
+		// but there have been responses received since the last queue report.  In this case, the gcode lines get "skipped"
+		// by the above code.
+		let shiftPlannerMirrorExtra = 0;
+		if (qi < 1 && sendQueueIdxRangeEnd > sendQueueIdxRangeStart) {
+			let lineIdStart = this.sendQueue[sendQueueIdxRangeStart].lineid;
+			let lineIdEnd = this.sendQueue[sendQueueIdxRangeEnd - 1].lineid;
+			if (this.plannerMirror.length > 1) {
+				// Combine it with the range of the most recent entry pushed onto plannerMirror
+				if (this.plannerMirror[this.plannerMirror.length - 1]) {
+					let pmentry = this.plannerMirror[this.plannerMirror.length - 1];
+					if (pmentry[1] < lineIdEnd) {
+						pmentry[1] = lineIdEnd;
+					}
+				} else {
+					this.plannerMirror[this.plannerMirror.length - 1] = [ lineIdStart, lineIdEnd ];
+				}
+			} else {
+				// There's no planner queue mirror entry to associate these with, so add one.  This will cause
+				// plannerMirror to become desynced from the qis and qos, so also shift an additional entry off later.
+				this.plannerMirror.push([ lineIdStart, lineIdEnd ]);
+				shiftPlannerMirrorExtra++;
+			}
+		}
+
+		// --- HANDLE qo ---
 		// For each entry pulled off the planner queue:
 		// - Run the executed hook for any gcode line ids corresponding to that entry at the front of sendQueue; and shift off each of those gcode entries
 		// - Shift it off our planner queue mirror
 		// - Update the various indexes into sendQueue
-		let plannerEntriesToShift = qo;
+		let plannerEntriesToShift = qo + shiftPlannerMirrorExtra;
 		// Make sure we're not shifting off more than the total size of our planner queue
 		if (plannerEntriesToShift > this.plannerMirror.length) plannerEntriesToShift = this.plannerMirror.length;
 		while (plannerEntriesToShift > 0) {
 			this._commsShiftPlannerMirror();
 			plannerEntriesToShift--;
+		}
+		// Shift even more if qi/qo have gotten desynced from the actual planner queue fill
+		let plannerQueueFill = this.plannerQueueSize - qr;
+		while (this.plannerMirror.length > plannerQueueFill) {
+			this._commsShiftPlannerMirror();
 		}
 
 		// Store qr so we know how many free queue entries there are
@@ -266,7 +298,7 @@ class TinyGController extends Controller {
 		// Check how many planner buffers are free.  We start with the number free as of the last qr and deduct the worse case
 		// scenario of buffers per line.  Send more lines if there's room for 1 more gcode line in the planner buffer.
 		const maxPlannerBuffersPerLine = 4;
-		let effeciveFreePlannerBuffers = this.lastQrNumFree - (this.sendQueueIdxToSend - this.sendQueueIdxToRecvAtLastQr) * maxPlannerBuffersPerLine;
+		let effectiveFreePlannerBuffers = this.lastQrNumFree - (this.sendQueueIdxToSend - this.sendQueueIdxToRecvAtLastQr) * maxPlannerBuffersPerLine;
 		return effectiveFreePlannerBuffers >= maxPlannerBuffersPerLine;
 	}
 
@@ -978,8 +1010,8 @@ class TinyGController extends Controller {
 
 	// Send serial commands to initialize machine and state after new serial connection
 	async _initMachine() {
-		// Strict json syntax.  Needed to parse with normal JSON parser.  Change this if abbreviated json parser is implemented.
-		await this.request({ js: 1 });
+		// Relaxed json syntax; this parser can handle it
+		await this.request({ js: 0 });
 		// Echo off (ideally this would be set at the same time as the above)
 		await this.request({ ee: 0 });
 		// Set json output verbosity
