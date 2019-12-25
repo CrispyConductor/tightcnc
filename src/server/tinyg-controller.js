@@ -1210,16 +1210,18 @@ class TinyGController extends Controller {
 		let hooks = new CrispHooks();
 		this.send(line, { immediate: true, hooks: hooks });
 		let resolved = false;
-		hooks.hookSync('ack', (_entry, r) => {
-			if (resolved) return;
-			resolved = true;
-			waiter.resolve(r);
-		});
-		hooks.hookSync('error', (err) => {
-			if (resolved) return;
-			resolved = true;
-			waiter.reject(err);
-		});
+		if (waiter) {
+			hooks.hookSync('ack', (_entry, r) => {
+				if (resolved) return;
+				resolved = true;
+				waiter.resolve(r);
+			});
+			hooks.hookSync('error', (err) => {
+				if (resolved) return;
+				resolved = true;
+				waiter.reject(err);
+			});
+		}
 	}
 
 	async probe(pos, feed = null) {
