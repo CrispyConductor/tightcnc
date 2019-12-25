@@ -134,8 +134,36 @@ class Controller extends EventEmitter {
 	 */
 	initConnection(retry = true) {}
 
+	/**
+	 * Send a string line to the controller.
+	 *
+	 * @method sendLine
+	 * @param {String} line - The string to send, without a \n at the end.
+	 * @param {Object} [options] - Controller-specific options
+	 */
 	sendLine(line, options={}) {}
 
+	/**
+	 * Send a GcodeLine object to the controller.  The GcodeLine object may optionally contain hooks as a
+	 * crisphooks instance (ie, using crisphooks.addHooks()).  If hooks are attached to the GcodeLine, the
+	 * following events will be fired.  Every event will be fired once, in order, for every given line.  The
+	 * only exception is the 'error' event, which, if it occurs, will cause no more events to be fired after.
+	 * If a controller does not support detecting one or more of these events, the events should be fired
+	 * anyway, in their proper order, as close to reality as can be determined.
+	 *
+	 * Supported events:
+	 * - error - When an error occurs before or during processing of the line.  Also used for cancellation.
+	 *     The parameter to the hook is the error object.
+	 * - queued - When the line is queued to be sent.
+	 * - sent - When the line is sent to the device.
+	 * - ack - When the device acknowledges receipt of the line.
+	 * - executing - When the instruction starts executing.
+	 * - executed - When the instruction has finished executing.
+	 *
+	 * @method sendGcode
+	 * @param {GcodeLine} gline
+	 * @param {Object} [options] - Controller-specific options
+	 */
 	sendGcode(gline, options={}) {}
 
 	send(thing, options={}) {
