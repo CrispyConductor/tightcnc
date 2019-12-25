@@ -380,6 +380,17 @@ class TinyGController extends Controller {
 	// This function is called when a gcode line starts executing on the controller.  It is
 	// responsible for updating any local state properties based on that gcode line.
 	_updateStateFromGcode(gline) {
+		// Shortcut case for simple common moves which don't need to be tracked here
+		let isSimpleMove = true;
+		for (let word of gline.words) {
+			if (word[0] === 'G' && word[1] !== 0 && word[1] !== 1) { isSimpleMove = false;  break; }
+			if (word[0] !== 'G' && word[0] !== 'X' && word[0] !== 'Y' && word[0] !== 'Z' && word[0] !== 'A' && word[0] !== 'B' && word[0] !== 'C' && word[0] !== 'F') {
+				isSimpleMove = false;
+				break;
+			}
+		}
+		if (isSimpleMove) return;
+
 		/* gcodes to watch for:
 		 * G10 L2 - Changes coordinate system offsets
 		 * G20/G21 - Select between inches and mm
@@ -396,10 +407,8 @@ class TinyGController extends Controller {
 
 		let zeropoint = [];
 		for (let i = 0; i < this.axisLabels.length; i++) zeropoint.push(0);
-		let G = gline.get('G');
-		let M = gline.get('M');
 
-		if (G === 10 && gline.has('L2') && gline.has('P')) {
+		if (gline.has('G10') && gline.has('L2') && gline.has('P')) {
 			let csys = gline.get('P') - 1;
 			if (!this.coordSysOffsets[csys]) this.coordSysOffsets[csys] = zeropoint;
 			for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) {
@@ -408,31 +417,32 @@ class TinyGController extends Controller {
 			}
 			this.emit('statusUpdate');
 		}
-		if (G === 20 || G === 21) {
-			this.units = (G === 20) ? 'in' : 'mm';
+		if (gline.has('G20') || gline.has('G21')) {
+			this.units = gline.has('G20') ? 'in' : 'mm';
 			this.emit('statusUpdate');
 		}
-		if (G === 28.1 || G === 30.1) {
-			let posnum = (G === 28.1) ? 0 : 1;
+		if (gline.has('G28.1') || gline.has('G30.1')) {
+			let posnum = gline.has('G28.1') ? 0 : 1;
 			this.storedPositions[posnum] = this.mpos.slice();
 			this.emit('statusUpdate');
 		}
-		if (G === 28.2 || G === 28.3) {
+		if (gline.has('G28.2') || gline.has('G28.3')) {
 			for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) {
 				let axis = this.axisLabels[axisNum].toUpperCase();
 				if (gline.has(axis)) this.homed[axisNum] = true;
 			}
 			this.emit('statusUpdate');
 		}
-		if (G >= 54 && G <= 59 && Math.floor(G) === G) {
-			this.activeCoordSys = G - 54;
+		let csysCode = gline.get('G', 'G54');
+		if (csysCode && csysCode >= 54 && csysCode <= 59 && Math.floor(csysCode) === csysCode) {
+			this.activeCoordSys = csysCode - 54;
 			this.emit('statusUpdate');
 		}
-		if (G === 90 || G === 91) {
-			this.incremental = G !== 90;
+		if (gline.has('G90') || gline.has('G91')) {
+			this.incremental = gline.has('G91');
 			this.emit('statusUpdate');
 		}
-		if (G === 92) {
+		if (gline.has('G92')) {
 			if (!this.offset) this.offset = zeropoint;
 			for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) {
 				let axis = this.axisLabels[axisNum].toUpperCase();
@@ -441,24 +451,24 @@ class TinyGController extends Controller {
 			this.offsetEnabled = true;
 			this.emit('statusUpdate');
 		}
-		if (G === 92.1) {
+		if (gline.has('G92.1')) {
 			this.offset = zeropoint;
 			this.offsetEnabled = false;
 			this.emit('statusUpdate');
 		}
-		if (G === 92.2) {
+		if (gline.has('G92.2')) {
 			this.offsetEnabled = false;
 			this.emit('statusUpdate');
 		}
-		if (G === 92.3) {
+		if (gline.has('G92.3')) {
 			this.offsetEnabled = true;
 			this.emit('statusUpdate');
 		}
-		if (G === 93 || G === 94) {
-			this.inverseFeed = G === 93;
+		if (gline.has('G93') || gline.has('G94')) {
+			this.inverseFeed = gline.has('G93');
 			this.emit('statusUpdate');
 		}
-		if (M === 2 || M === 30) {
+		if (gline.has('M2') || gline.has('M30')) {
 			this.offset = zeropoint;
 			this.offsetEnabled = false;
 			this.activeCoordSys = 0;
@@ -469,15 +479,15 @@ class TinyGController extends Controller {
 			this.sendLine({ coor: null }, { immediate: true });
 			this.sendLine({ unit: null }, { immediate: true });
 		}
-		if (M === 3 || M === 4 || M === 5) {
-			this.spindle = (M === 5) ? false : true;
-			this.spindleDirection = (M === 4) ? -1 : 1;
+		if (gline.has('M3') || gline.has('M4') || gline.has('M5')) {
+			this.spindle = !gline.has('M5');
+			this.spindleDirection = gline.has('M4') ? -1 : 1;
 			this.spindleSpeed = gline.get('S') || null;
 			this.emit('statusUpdate');
 		}
-		if (M === 7 || M === 8 || M === 9) {
-			if (M === 7) this.coolant = 1;
-			else if (M === 8) this.coolant = 2;
+		if (gline.has('M7') || gline.has('M8') || gline.has('M9')) {
+			if (gline.has('M7')) this.coolant = 1;
+			else if (gline.has('M8')) this.coolant = 2;
 			else this.coolant = false;
 			this.emit('statusUpdate');
 		}
