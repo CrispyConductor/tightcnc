@@ -137,7 +137,8 @@ class JobManager {
 		// Build the processor chain
 		let source = await this.tightcnc.getGcodeSourceStream({
 			filename: jobOptions.filename,
-			gcodeProcessors: jobOptions.gcodeProcessors
+			gcodeProcessors: jobOptions.gcodeProcessors,
+			rawStrings: jobOptions.rawFile
 		});
 		job.sourceStream = source;
 		// Wait for the controller to stop moving
@@ -189,12 +190,18 @@ class JobManager {
 		// Do dry run to get overall stats
 		let source = await this.tightcnc.getGcodeSourceStream({
 			filename: jobOptions.filename,
-			gcodeProcessors: jobOptions.gcodeProcessors
+			gcodeProcessors: jobOptions.gcodeProcessors,
+			rawStrings: jobOptions.rawFile
 		});
 		if (outputFile) {
-			await source.intoFile(outputFile);
+			await source
+				.throughData((chunk) => {
+					if (typeof chunk === 'string') return chunk + '\n';
+					else return chunk.toString() + '\n';
+				})
+				.intoFile(outputFile);
 		} else {
-			await source.pipe(new zstreams.BlackholeStream({ objectMode: false })).intoPromise();
+			await source.pipe(new zstreams.BlackholeStream({ objectMode: true })).intoPromise();
 		}
 		// Get the job stats
 		let mainJobStats = this._mainJobStats(gcodeProcessorStatus);

@@ -189,18 +189,19 @@ class TightCNCServer extends EventEmitter {
 	 *     instances under the key 'inst' (unless the 'inst' key already exists, in which case it is used).
 	 *     @param {String} options.gcodeProcessors.#.name - Name of gcode processor.
 	 *     @param {Object} options.gcodeProcessors.#.options - Additional options to pass to gcode processor constructor.
-	 * @return {Promise{ReadableStream}} - A promise that resolves with a readable data stream.  The stream will have
+	 *   @param {Boolean} options.rawStrings=false - If true, the stream returns strings (lines) instead of GcodeLine instances.
+	 * @return {Promise{ReadableStream}} - A promise that resolves with a readable object stream of GcodeLine instances.  The stream will have
 	 *   the additional property 'gcodeProcessorStream' containing an array of all GcodeProcessor's in the chain.
 	 */
 	async getGcodeSourceStream(options) {
-		// Handle case where there are no gcode processors
-		if (!options.gcodeProcessors || !options.gcodeProcessors.length) {
+		// Handle case where returning raw strings
+		if (options.rawStrings) {
 			if (options.filename) {
 				let filename = options.filename;
 				if (!path.isAbsolute(filename)) filename = path.join(this.config.dataDir, filename);
-				return zstreams.fromFile(filename);
+				return zstreams.fromFile(filename).pipe(new zstreams.SplitStream());
 			} else {
-				return zstreams.fromString(options.data.join('\n') + '\n');
+				return zstreams.fromArray(options.data);
 			}
 		}
 
@@ -219,7 +220,7 @@ class TightCNCServer extends EventEmitter {
 				gcodeProcessorInstances.push(inst);
 			}
 		}
-		return await GcodeProcessor.buildProcessorChain(options.filename || options.data, gcodeProcessorInstances);
+		return await GcodeProcessor.buildProcessorChain(options.filename || options.data, gcodeProcessorInstances, false);
 	}
 
 }
