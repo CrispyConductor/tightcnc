@@ -10,8 +10,8 @@ module.exports = {
 			dataBits: 8,
 			stopBits: 1,
 			parity: 'none',
-			rtscts: false,
-			xany: true
+			rtscts: true,
+			xany: false
 		}
 	},
 	dataDir: '/tmp/tightcnc-data',

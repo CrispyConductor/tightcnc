@@ -613,9 +613,8 @@ class TinyGController extends Controller {
 				dataBits: 8,
 				stopBits: 1,
 				parity: 'none',
-				rtscts: false,
-				xon: true,
-				xoff: true
+				rtscts: true,
+				xany: false
 			};
 			for (let key in this.config) {
 				if (key in serialOptions) {
