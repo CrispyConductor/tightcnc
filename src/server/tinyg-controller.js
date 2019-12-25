@@ -930,21 +930,21 @@ class TinyGController extends Controller {
 			switch(sr.stat) {
 				case 0: // initializing
 					this.ready = false;
-					this.paused = false;
+					this.held = false;
 					this.moving = false;
 					this.error = false;
 					this.programRunning = false;
 					break;
 				case 1: // "reset"
 					this.ready = true;
-					this.paused = false;
+					this.held = false;
 					this.moving = false;
 					this.error = false;
 					this.programRunning = false;
 					break;
 				case 2: // alarm
 					this.ready = false;
-					this.paused = false;
+					this.held = false;
 					this.moving = false;
 					this.error = true;
 					if (!this.errorData) this.errorData = 'alarm';
@@ -952,40 +952,40 @@ class TinyGController extends Controller {
 				case 3: // stop
 				case 8: // cycle
 					this.ready = true;
-					this.paused = false;
+					this.held = false;
 					this.moving = false;
 					this.error = false;
 					this.programRunning = true;
 					break;
 				case 4: // end
 					this.ready = true;
-					this.paused = false;
+					this.held = false;
 					this.moving = false;
 					this.error = false;
 					this.programRunning = false;
 					break;
 				case 5: // run
 					this.ready = true;
-					this.paused = false;
+					this.held = false;
 					this.moving = true;
 					this.error = false;
 					this.programRunning = true;
 					break;
 				case 6: // hold
 					this.ready = true;
-					this.paused = true;
+					this.held = true;
 					this.moving = false;
 					this.error = false;
 					break;
 				case 7: // probe
 					this.ready = true;
-					this.paused = false;
+					this.held = false;
 					this.moving = true;
 					this.error = false;
 					break;
 				case 9: // homing
 					this.ready = true;
-					this.paused = false;
+					this.held = false;
 					this.moving = true;
 					this.error = false;
 					break;
@@ -1141,19 +1141,19 @@ class TinyGController extends Controller {
 
 	hold() {
 		this.sendLine('!');
-		this.paused = true;
+		this.held = true;
 	}
 
 	resume() {
 		this.sendLine('~');
-		this.paused = false;
+		this.held = false;
 	}
 
 	cancel() {
-		if (!this.paused) this.hold();
+		if (!this.held) this.hold();
 		this._cancelRunningOps(new XError(XError.CANCELLED, 'Operation cancelled'));
 		this.sendLine('%');
-		this.paused = false;
+		this.held = false;
 	}
 
 	reset() {

@@ -98,7 +98,7 @@ class Controller extends EventEmitter {
 		// Whether machine is homed, for each axis
 		this.homed = [ false, false, false ];
 		// If the machine is currently paused / feed hold
-		this.paused = false;
+		this.held = false;
 		// Current units configured for machine; 'mm' or 'in'
 		this.units = 'mm';
 		// Current feed rate for machine
@@ -192,7 +192,7 @@ class Controller extends EventEmitter {
 	/**
 	 * Returns a promise that resolves when the machine state properties on this class have been fully synchronized with
 	 * the machine.  Generally this means that all movement has stopped, all sent lines have been processed, and there's nothing
-	 * left in the queue.  Calling this function may temporarily pause the send queue.  After the returned promise resolves,
+	 * left in the queue.  Calling this function may or may not temporarily pause the send queue.  After the returned promise resolves,
 	 * the state variables are only guaranteed to be in sync until the next send queue entry is sent (which might be right away).
 	 * To guarantee proper operation, no other commands should be sent until after this function resolves.
 	 *
@@ -204,19 +204,19 @@ class Controller extends EventEmitter {
 	/**
 	 * Pauses machine / feed hold.
 	 *
-	 * @method pause
+	 * @method hold
 	 */
 	hold() {}
 
 	/**
-	 * Resumes paused machine.
+	 * Resumes paused/held machine.
 	 *
 	 * @method resume
 	 */
 	resume() {}
 
 	/**
-	 * Cancels any current operations and flushes queue.  If machine is paused, unpauses.
+	 * Cancels any current operations and flushes queue.  If machine is in feed hold, unhold.
 	 *
 	 * @method cancel
 	 */
@@ -293,7 +293,7 @@ class Controller extends EventEmitter {
 			offsetEnabled: c.offsetEnabled,
 			storedPositions: c.storedPositions,
 			homed: c.homed,
-			paused: c.paused,
+			held: c.held,
 			units: c.units,
 			feed: c.feed,
 			incremental: c.incremental,

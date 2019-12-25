@@ -391,7 +391,7 @@ class ConsoleUI extends EventEmitter {
 	}
 
 	setupPrimaryStatusBoxes() {
-		this.machineStateStatusBox = this.addStatusBox('Machine', { state: 'NOT READY', paused: null, error: null }, { state: 'State', paused: 'Pause', error: 'Err' });
+		this.machineStateStatusBox = this.addStatusBox('Machine', { state: 'NOT READY', held: null, error: null }, { state: 'State', held: 'Hold', error: 'Err' });
 		let posStatusInitial = {};
 		let posStatusLabels = {};
 		for (let i = 0; i < this.usedAxes.length; i++) {
@@ -454,7 +454,7 @@ class ConsoleUI extends EventEmitter {
 		}
 		this.machineStateStatusBox.data.state = machineState;
 		this.machineStateStatusBox.data.error = machineError;
-		this.machineStateStatusBox.data.paused = cstatus.paused ? '{red-bg}YES{/red-bg}' : 'NO';
+		this.machineStateStatusBox.data.held = cstatus.held ? '{red-bg}YES{/red-bg}' : 'NO';
 
 		// Position
 		const posPrecision = 3;
