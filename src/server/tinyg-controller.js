@@ -1400,6 +1400,20 @@ class TinyGController extends Controller {
 		}
 	}
 
+	getStatus() {
+		let o = super.getStatus();
+		o.comms = {
+			sendQueueLength: this.sendQueue.length,
+			plannerMirrorLength: this.plnnerMirror.length,
+			sendQueueIdxToSend: this.sendQueueIdxToSend,
+			sendQueueIdxToReceive: this.sendQueueIdxToReceive,
+			sendQueueIdxToRecvAtLastQr: this.sendQueueIdxToRecvAtLastQr,
+			lastQrNumFree: this.lastQrNumFree,
+			checkSend: this._checkSendToDevice()
+		};
+		return o;
+	}
+
 };
 
 module.exports = TinyGController;
