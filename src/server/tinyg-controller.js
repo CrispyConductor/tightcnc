@@ -329,6 +329,8 @@ class TinyGController extends Controller {
 	// Pushes a block of data onto the send queue.  The block is in the format of send queue entries.  This function cannot be used with
 	// front-panel controls (ie, feed hold).  Lineid is added.
 	_sendBlock(block, immediate = false) {
+		if (!block.str.trim()) return;
+
 		if (immediate) {
 			this._sendBlockImmediate(block);
 			return;
@@ -341,6 +343,8 @@ class TinyGController extends Controller {
 
 	// Pushes a block onto the sendQueue such that it will be next to be sent, and force it to be sent immediately.
 	_sendBlockImmediate(block) {
+		if (!block.str.trim()) return;
+
 		// Need to insert the block immediately after the most recently sent block
 		// Determine the line id based on its position
 		let newLineId;
