@@ -1097,7 +1097,7 @@ class TinyGController extends Controller {
 
 		// Bounds within which to stop and start reading from the stream.  These correspond to the number of queued lines
 		// not yet sent to the controller.
-		let sendQueueHighWater = this.config.streamSendQueueHighWaterMark || 5;
+		let sendQueueHighWater = this.config.streamSendQueueHighWaterMark || 20;
 		let sendQueueLowWater = this.config.streamSendQueueLowWaterMark || Math.min(10, Math.floor(sendQueueHighWater / 5));
 		let streamPaused = false;
 		let canceled = false;
