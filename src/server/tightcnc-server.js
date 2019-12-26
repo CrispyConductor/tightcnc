@@ -190,6 +190,7 @@ class TightCNCServer extends EventEmitter {
 	 *     @param {String} options.gcodeProcessors.#.name - Name of gcode processor.
 	 *     @param {Object} options.gcodeProcessors.#.options - Additional options to pass to gcode processor constructor.
 	 *   @param {Boolean} options.rawStrings=false - If true, the stream returns strings (lines) instead of GcodeLine instances.
+	 *   @param {Boolean} options.dryRun=false - If true, sets dryRun flag on gcode processors.
 	 * @return {Promise{ReadableStream}} - A promise that resolves with a readable object stream of GcodeLine instances.  The stream will have
 	 *   the additional property 'gcodeProcessorStream' containing an array of all GcodeProcessor's in the chain.
 	 */
@@ -209,6 +210,7 @@ class TightCNCServer extends EventEmitter {
 		let gcodeProcessorInstances = [];
 		for (let gcpspec of (options.gcodeProcessors || [])) {
 			if (gcpspec.inst) {
+				if (options.dryRun) gcpspec.inst.dryRun = true;
 				gcodeProcessorInstances.push(gcpspec.inst);
 			} else {
 				let cls = this.gcodeProcessors[gcpspec.name];
@@ -216,6 +218,7 @@ class TightCNCServer extends EventEmitter {
 				let opts = objtools.deepCopy(gcpspec.options || {});
 				opts.tightcnc = this;
 				let inst = new cls(opts);
+				if (options.dryRun) inst.dryRun = true;
 				gcpspec.inst = inst;
 				gcodeProcessorInstances.push(inst);
 			}

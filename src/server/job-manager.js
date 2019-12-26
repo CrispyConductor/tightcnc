@@ -17,6 +17,11 @@ class JobStatusGcodeProcessor extends GcodeProcessor {
 	processGcode(gline) {
 		if (this.jobStatusCallback) {
 			this.jobStatusCallback(gline.gcodeProcessors);
+			if (gline.hookSync) {
+				gline.hookSync('executed', () => {
+					this.jobStatusCallback(gline.gcodeProcessors);
+				});
+			}
 		}
 		return gline;
 	}
@@ -86,7 +91,8 @@ class JobManager {
 			jobOptions.gcodeProcessors.push({
 				name: 'gcodevm',
 				options: {
-					id: 'final-job-vm'
+					id: 'final-job-vm',
+					updateOnHook: 'executed'
 				}
 			});
 			jobOptions.gcodeProcessors.push({
@@ -192,6 +198,11 @@ class JobManager {
 			filename: jobOptions.filename,
 			gcodeProcessors: jobOptions.gcodeProcessors,
 			rawStrings: jobOptions.rawFile
+		});
+		source = source.through((gline) => {
+			// call hooks on each line (since there's no real controller to do it)
+			GcodeProcessor.callLineHooks(gline);
+			return gline;
 		});
 		if (outputFile) {
 			await source
