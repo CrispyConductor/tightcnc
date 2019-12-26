@@ -1122,7 +1122,7 @@ class TinyGController extends Controller {
 			stream.emit('error', err);
 		};
 
-		stream.on('error', (err) => {
+		stream.on(stream._isZStream ? 'chainerror' : 'error', (err) => {
 			if (canceled) return;
 			this.removeListener('sent', sentListener);
 			this.removeListener('cancelRunningOps', cancelHandler);

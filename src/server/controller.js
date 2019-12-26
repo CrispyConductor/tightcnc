@@ -179,7 +179,8 @@ class Controller extends EventEmitter {
 	 *
 	 * @method sendStream
 	 * @param {ReadableString} stream - Readable object stream.  Each object can either be a string (without a newline - newlines should be
-	 *   added), or an instance of GcodeLine.
+	 *   added), or an instance of GcodeLine.  This can either be a zstreams ReadableStream or a vanilla ReadableStream.  They act the same
+	 *   for the most part, but error handling is a bit different.
 	 * @return {Promise} - Resolves when whole stream has been sent, and movements processed.
 	 */
 	sendStream(stream) {}

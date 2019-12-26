@@ -140,17 +140,18 @@ class JobManager {
 			startTime: new Date().toISOString()
 		};
 		job = this.currentJob;
+
+		// Wait for the controller to stop moving
+		await this.tightcnc.controller.waitSync();
+
 		// Build the processor chain
-		let source = await this.tightcnc.getGcodeSourceStream({
+		let source = this.tightcnc.getGcodeSourceStream({
 			filename: jobOptions.filename,
 			gcodeProcessors: jobOptions.gcodeProcessors,
 			rawStrings: jobOptions.rawFile
 		});
 		job.sourceStream = source;
-		// Wait for the controller to stop moving
-		await this.tightcnc.controller.waitSync();
 		// Pipe it to the controller, asynchronously
-		job.state = 'running';
 		this.tightcnc.controller.sendStream(source)
 			.then(() => {
 				job.state = 'complete';
@@ -163,6 +164,24 @@ class JobManager {
 					job.error = err.toObject ? err.toObject() : err;
 				}
 			});
+
+		// Wait until the processorChainReady event (or chainerror event) fires on source (indicating any preprocessing is done)
+		await new Promise((resolve, reject) => {
+			let finished = false;
+			source.on('processorChainReady', () => {
+				if (finished) return;
+				finished = true;
+				resolve();
+			});
+			source.on('chainerror', (err) => {
+				if (finished) return;
+				finished = true;
+				reject(err);
+			});
+		});
+
+		job.state = 'running';
+
 		return this.getStatus();
 	}
 
@@ -194,7 +213,7 @@ class JobManager {
 			});
 		}
 		// Do dry run to get overall stats
-		let source = await this.tightcnc.getGcodeSourceStream({
+		let source = this.tightcnc.getGcodeSourceStream({
 			filename: jobOptions.filename,
 			gcodeProcessors: jobOptions.gcodeProcessors,
 			rawStrings: jobOptions.rawFile,
