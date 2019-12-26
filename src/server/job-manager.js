@@ -44,7 +44,7 @@ class JobManager {
 			jobOptions: this.currentJob.jobOptions,
 			dryRunResults: this.currentJob.dryRunResults,
 			startTime: this.currentJob.startTime,
-			error: this.currentJob.error,
+			error: this.currentJob.state === 'error' ? this.currentJob.error.toString() : null,
 			gcodeProcessors: this.currentJob.gcodeProcessors,
 			stats: this.currentJob.stats,
 			progress: this.currentJob.progress
@@ -161,7 +161,9 @@ class JobManager {
 					job.state = 'cancelled';
 				} else {
 					job.state = 'error';
-					job.error = err.toObject ? err.toObject() : err;
+					job.error = err;
+					console.error('Job error: ' + err);
+					console.error(err.stack);
 				}
 			});
 
@@ -176,6 +178,8 @@ class JobManager {
 			source.on('chainerror', (err) => {
 				if (finished) return;
 				finished = true;
+				job.state = 'error';
+				job.error = err;
 				reject(err);
 			});
 		});
