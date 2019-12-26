@@ -1404,7 +1404,7 @@ class TinyGController extends Controller {
 		let o = super.getStatus();
 		o.comms = {
 			sendQueueLength: this.sendQueue.length,
-			plannerMirrorLength: this.plnnerMirror.length,
+			plannerMirrorLength: this.plannerMirror.length,
 			sendQueueIdxToSend: this.sendQueueIdxToSend,
 			sendQueueIdxToReceive: this.sendQueueIdxToReceive,
 			sendQueueIdxToRecvAtLastQr: this.sendQueueIdxToRecvAtLastQr,
