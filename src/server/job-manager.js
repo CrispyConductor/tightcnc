@@ -197,7 +197,8 @@ class JobManager {
 		let source = await this.tightcnc.getGcodeSourceStream({
 			filename: jobOptions.filename,
 			gcodeProcessors: jobOptions.gcodeProcessors,
-			rawStrings: jobOptions.rawFile
+			rawStrings: jobOptions.rawFile,
+			dryRun: true
 		});
 		source = source.through((gline) => {
 			// call hooks on each line (since there's no real controller to do it)
