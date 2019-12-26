@@ -510,8 +510,9 @@ class TinyGController extends Controller {
 
 	sendLine(str, options = {}) {
 		// Check for "immediate commands" like feed hold that don't go into the queue
-		if (this._isImmediateCommand(str)) {
-			this._writeToSerial(str);
+		if (typeof str === 'string' && this._isImmediateCommand(str)) {
+			//this._writeToSerial(str);
+			this._handleSendImmediateCommand(str);
 			return;
 		}
 		// If not a string, jsonify it
@@ -574,11 +575,29 @@ class TinyGController extends Controller {
 	}
 
 	_writeToSerial(str) {
+		if (!this.serial) return;
 		this.serial.write(str);
 	}
 
 	_isImmediateCommand(str) {
+		str = str.trim();
 		return str === '!' || str === '%' || str === '~' || str === '\x18';
+	}
+
+	_handleSendImmediateCommand(str) {
+		this._writeToSerial(str);
+		str = str.trim();
+		if (str === '!') {
+			this.held = true;
+		} else if (str === '~') {
+			this.held = false;
+		} else if (str === '%') {
+			this._cancelRunningOps(new XError(XError.CANCELLED, 'Operation cancelled'));
+			this.held = false;
+		} else if (str === '\x18') {
+			this._cancelRunningOps(new XError(XError.CANCELLED, 'Machine reset'));
+			this.ready = false; // will be set back to true once SYSTEM READY message received
+		}
 	}
 
 	// Returns a promise that resolves when the line is received.  The promise resolves with the full response (ie, it's an object containing 'r').
@@ -1145,25 +1164,19 @@ class TinyGController extends Controller {
 
 	hold() {
 		this.sendLine('!');
-		this.held = true;
 	}
 
 	resume() {
 		this.sendLine('~');
-		this.held = false;
 	}
 
 	cancel() {
 		if (!this.held) this.hold();
-		this._cancelRunningOps(new XError(XError.CANCELLED, 'Operation cancelled'));
 		this.sendLine('%');
-		this.held = false;
 	}
 
 	reset() {
-		this._cancelRunningOps(new XError(XError.CANCELLED, 'Machine reset'));
 		this.sendLine('\x18');
-		this.ready = false; // will be set back to true once SYSTEM READY message received
 	}
 
 	async home(axes = null) {
