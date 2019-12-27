@@ -265,7 +265,8 @@ class TinyGController extends Controller {
 		if (responseStatusCode === 0) {
 			// If we're not expecting this to go onto the planner queue, splice it out of the list now.  Otherwise,
 			// increment the receive pointer.
-			if (entry.goesToPlanner) {
+			const everythingToPlanner = true; // makes gline hooks execute in order
+			if (entry.goesToPlanner || everythingToPlanner) {
 				this.sendQueueIdxToReceive++;
 			} else {
 				this.sendQueue.splice(this.sendQueueIdxToReceive, 1);
@@ -537,7 +538,7 @@ class TinyGController extends Controller {
 		}, options.immediate);
 	}
 
-	// Returns true if we think the given gcode line will get pushed onto the TinyG planner queue
+	// Returns # if we think the given gcode line will get pushed onto the TinyG planner queue
 	_gcodeLineRequiresPlanner(gline) {
 		let containsCoordinates = false;
 		for (let label of this.axisLabels) {
@@ -571,7 +572,7 @@ class TinyGController extends Controller {
 		) {
 			return 4;
 		}
-		return false;
+		return 0;
 	}
 
 	_writeToSerial(str) {
