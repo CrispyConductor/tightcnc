@@ -32,24 +32,27 @@ class JobManager {
 		}
 
 		// Calculate main stats and progress
+		let progress = undefined;
 		let stats = this._mainJobStats(gcodeProcessorStatuses);
 		stats.predictedTime = stats.time;
-		let curTime = new Date();
-		stats.updateTime = curTime.toISOString();
-		stats.time = (curTime.getTime() - new Date(job.startTime).getTime()) / 1000;
-		// create job progress object
-		let progress = undefined;
-		if (job.dryRunResults && job.dryRunResults.stats && job.dryRunResults.stats.time) {
-			let estTotalTime = job.dryRunResults.stats.time;
-			if (stats.lineCount >= 300) { // don't adjust based on current time unless enough lines have been processed to compensate for stream buffering
-				estTotalTime *= (curTime.getTime() - new Date(job.startTime).getTime()) / 1000 / stats.predictedTime;
+		let finalVMStatus = gcodeProcessorStatuses['final-job-vm'];
+		if (finalVMStatus && finalVMStatus.updateTime) {
+			let curTime = new Date(finalVMStatus.updateTime);
+			stats.updateTime = curTime.toISOString();
+			stats.time = (curTime.getTime() - new Date(job.startTime).getTime()) / 1000;
+			// create job progress object
+			if (job.dryRunResults && job.dryRunResults.stats && job.dryRunResults.stats.time) {
+				let estTotalTime = job.dryRunResults.stats.time;
+				if (stats.lineCount >= 300) { // don't adjust based on current time unless enough lines have been processed to compensate for stream buffering
+					estTotalTime *= (curTime.getTime() - new Date(job.startTime).getTime()) / 1000 / stats.predictedTime;
+				}
+				progress = {
+					timeRunning: stats.time,
+					estTotalTime: estTotalTime,
+					estTimeRemaining: Math.max(estTotalTime - stats.time, 0),
+					percentComplete: Math.min(stats.time / (estTotalTime || 1) * 100, 100)
+				};
 			}
-			progress = {
-				timeRunning: stats.time,
-				estTotalTime: estTotalTime,
-				estTimeRemaining: Math.max(estTotalTime - stats.time, 0),
-				percentComplete: Math.min(stats.time / (estTotalTime || 1) * 100, 100)
-			};
 		}
 
 		// Return status
