@@ -35,6 +35,9 @@ class ModeJobInfo extends ConsoleUIMode {
 			if (vmStatus.line) text += 'GCode line number: ' + vmStatus.line + '\n';
 			text += 'Lines processed: ' + vmStatus.lineCounter + '\n';
 		}
+		if (status.job.state === 'error' && status.job.error) {
+			text += 'Error: ' + JSON.stringify(status.job.error) + '\n';
+		}
 		return text;
 	}
 
