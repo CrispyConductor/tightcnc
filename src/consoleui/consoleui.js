@@ -41,6 +41,8 @@ class ConsoleUI extends EventEmitter {
 			if (str) str += '; ';
 			str += '' + arg;
 		}
+		if (str === this.lastLogStr) return;
+		this.lastLogStr = str;
 		if (!this.logInited) {
 			console.log(str);
 		} else {

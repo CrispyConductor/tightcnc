@@ -305,6 +305,7 @@ class ModeNewJob extends ConsoleUIMode {
 				this.consoleui.showTempMessage('Starting job.');
 				this.consoleui.hideWaitingBox();
 				this.updateJobInfoText();
+				this.consoleui.activateMode('jobInfo');
 			})
 			.catch((err) => {
 				this.consoleui.clientError(err);
