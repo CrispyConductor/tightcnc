@@ -5,28 +5,6 @@ const GcodeProcessor = require('../../lib/gcode-processor');
 const fs = require('fs');
 const path = require('path');
 
-class JobStatusGcodeProcessor extends GcodeProcessor {
-	constructor(options, statusCallback) {
-		super(options, 'jobStatus', false);
-		this.jobStatusCallback = statusCallback;
-	}
-	copyProcessor() {
-		let r = super.copyProcessor();
-		r.jobStatusCallback = null;
-	}
-	processGcode(gline) {
-		if (this.jobStatusCallback) {
-			this.jobStatusCallback(gline.gcodeProcessors);
-			if (gline.hookSync) {
-				gline.hookSync('executed', () => {
-					this.jobStatusCallback(gline.gcodeProcessors);
-				});
-			}
-		}
-		return gline;
-	}
-}
-
 class JobManager {
 
 	constructor(tightcnc) {
@@ -39,15 +17,51 @@ class JobManager {
 
 	getStatus() {
 		if (!this.currentJob) return null;
+		let job = this.currentJob;
+
+		// Fetch the status from each gcode processor
+		let gcodeProcessorStatuses = undefined;
+		if (job.gcodeProcessors) {
+			gcodeProcessorStatuses = {};
+			for (let key in job.gcodeProcessors) {
+				let s = job.gcodeProcessors[key].getStatus();
+				if (s) {
+					gcodeProcessorStatuses[key] = s;
+				}
+			}
+		}
+
+		// Calculate main stats and progress
+		let stats = this._mainJobStats(gcodeProcessorStatuses);
+		stats.predictedTime = stats.time;
+		let curTime = new Date();
+		stats.updateTime = curTime.toISOString();
+		stats.time = (curTime.getTime() - new Date(job.startTime).getTime()) / 1000;
+		// create job progress object
+		let progress = undefined;
+		if (job.dryRunResults && job.dryRunResults.stats && job.dryRunResults.stats.time) {
+			let estTotalTime = job.dryRunResults.stats.time;
+			if (stats.lineCount >= 300) { // don't adjust based on current time unless enough lines have been processed to compensate for stream buffering
+				estTotalTime *= (curTime.getTime() - new Date(job.startTime).getTime()) / 1000 / job.stats.predictedTime;
+			}
+			progress = {
+				timeRunning: job.stats.time,
+				estTotalTime: estTotalTime,
+				estTimeRemaining: Math.max(estTotalTime - job.stats.time, 0),
+				percentComplete: Math.min(job.stats.time / (estTotalTime || 1) * 100, 100)
+			};
+		}
+
+		// Return status
 		return {
 			state: this.currentJob.state,
 			jobOptions: this.currentJob.jobOptions,
 			dryRunResults: this.currentJob.dryRunResults,
 			startTime: this.currentJob.startTime,
 			error: this.currentJob.state === 'error' ? this.currentJob.error.toString() : null,
-			gcodeProcessors: this.currentJob.gcodeProcessors,
-			stats: this.currentJob.stats,
-			progress: this.currentJob.progress
+			gcodeProcessors: gcodeProcessorStatuses,
+			stats: stats,
+			progress: progress
 		};
 	}
 
@@ -95,35 +109,6 @@ class JobManager {
 					updateOnHook: 'executed'
 				}
 			});
-			jobOptions.gcodeProcessors.push({
-				name: 'jobStatus',
-				options: {
-					id: 'job-status-reporter'
-				},
-				inst: new JobStatusGcodeProcessor({ tightcnc: this.tightcnc }, (gps) => {
-					if (gps && job) {
-						job.gcodeProcessors = gps;
-						job.stats = this._mainJobStats(gps);
-						job.stats.predictedTime = job.stats.time;
-						let curTime = new Date();
-						job.stats.updateTime = curTime.toISOString();
-						job.stats.time = (curTime.getTime() - new Date(job.startTime).getTime()) / 1000;
-						// create job progress object
-						if (job.stats && job.dryRunResults && job.dryRunResults.stats && job.dryRunResults.stats.time) {
-							let estTotalTime = job.dryRunResults.stats.time;
-							if (job.stats.lineCount >= 300) { // don't adjust based on current time unless enough lines have been processed to compensate for stream buffering
-								estTotalTime *= (curTime.getTime() - new Date(job.startTime).getTime()) / 1000 / job.stats.predictedTime;
-							}
-							job.progress = {
-								timeRunning: job.stats.time,
-								estTotalTime: estTotalTime,
-								estTimeRemaining: Math.max(estTotalTime - job.stats.time, 0),
-								percentComplete: Math.min(job.stats.time / (estTotalTime || 1) * 100, 100)
-							};
-						}
-					}
-				})
-			});
 		}
 		// Check to ensure current job isn't running and that the controller is ready
 		if (this.currentJob && this.currentJob.state !== 'complete' && this.currentJob.state !== 'cancelled' && this.currentJob.state !== 'error') {
@@ -143,6 +128,10 @@ class JobManager {
 
 		// Wait for the controller to stop moving
 		await this.tightcnc.controller.waitSync();
+
+		// Note that if the following few lines have any await's in between them, it could result
+		// in certain errors from gcode processors breaking things, since errors are handled through
+		// Controller#sendStream().
 
 		// Build the processor chain
 		let source = this.tightcnc.getGcodeSourceStream({
@@ -170,9 +159,11 @@ class JobManager {
 		// Wait until the processorChainReady event (or chainerror event) fires on source (indicating any preprocessing is done)
 		await new Promise((resolve, reject) => {
 			let finished = false;
-			source.on('processorChainReady', () => {
+			source.on('processorChainReady', (_chain, chainById) => {
 				if (finished) return;
 				finished = true;
+				job.gcodeProcessors = chainById;
+				job.startTime = new Date().toISOString();
 				resolve();
 			});
 			source.on('chainerror', (err) => {
@@ -194,7 +185,6 @@ class JobManager {
 		jobOptions = objtools.deepCopy(jobOptions);
 		jobOptions.filename = path.resolve(this.tightcnc.config.dataDir, jobOptions.filename);
 		if (outputFile) outputFile = path.resolve(this.tightcnc.config.dataDir, outputFile);
-		let gcodeProcessorStatus = {};
 		if (jobOptions.rawFile) {
 			delete jobOptions.gcodeProcessors;
 		} else {
@@ -205,15 +195,6 @@ class JobManager {
 				options: {
 					id: 'final-job-vm'
 				}
-			});
-			jobOptions.gcodeProcessors.push({
-				name: 'jobStatus',
-				options: {
-					id: 'job-status-reporter'
-				},
-				inst: new JobStatusGcodeProcessor({ tightcnc: this.tightcnc }, (gps) => {
-					if (gps) gcodeProcessorStatus = gps;
-				})
 			});
 		}
 		// Do dry run to get overall stats
@@ -239,11 +220,18 @@ class JobManager {
 			await source.pipe(new zstreams.BlackholeStream({ objectMode: true })).intoPromise();
 		}
 		// Get the job stats
-		let mainJobStats = this._mainJobStats(gcodeProcessorStatus);
+		let gpcStatuses = {};
+		let gpc = source.gcodeProcessorChainById || {};
+		for (let key in gpc) {
+			let s = gpc[key].getStatus();
+			if (s) {
+				gpcStatuses[key] = s;
+			}
+		}
 		return {
 			jobOptions: origJobOptions,
-			stats: mainJobStats,
-			gcodeProcessors: gcodeProcessorStatus
+			stats: this._mainJobStats(gpcStatuses),
+			gcodeProcessors: gpcStatuses
 		};
 	}
 }
