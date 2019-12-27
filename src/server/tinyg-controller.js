@@ -302,7 +302,7 @@ class TinyGController extends Controller {
 		if (receiveBufferFilled < receiveBufferMaxFill) return true;
 		// Check how many planner buffers are free.  We start with the number free as of the last qr and deduct the worse case
 		// scenario of buffers per line.  Send more lines if there's room for 1 more gcode line in the planner buffer.
-		let effectiveFreePlannerBuffers = this.lastQrNumFree;
+		let effectiveFreePlannerBuffers = this.lastQrNumFree - 3; // subtract 3 because it looks like the tinyg won't parse a line unless there are at least 4 open planner buffers
 		// for each unacked line sent since the last queue report, deduce the number of planner queue entries it's expected to use
 		// TODO: track this count as a separate state variable to avoid doing this loop every time
 		for (let i = this.sendQueueIdxToRecvAtLastQr; i < this.sendQueueIdxToSend && i < this.sendQueue.length; i++) {
