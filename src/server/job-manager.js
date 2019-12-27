@@ -42,7 +42,7 @@ class JobManager {
 		if (job.dryRunResults && job.dryRunResults.stats && job.dryRunResults.stats.time) {
 			let estTotalTime = job.dryRunResults.stats.time;
 			if (stats.lineCount >= 300) { // don't adjust based on current time unless enough lines have been processed to compensate for stream buffering
-				estTotalTime *= (curTime.getTime() - new Date(job.startTime).getTime()) / 1000 / job.stats.predictedTime;
+				estTotalTime *= (curTime.getTime() - new Date(job.startTime).getTime()) / 1000 / stats.predictedTime;
 			}
 			progress = {
 				timeRunning: stats.time,
@@ -66,7 +66,7 @@ class JobManager {
 	}
 
 	_mainJobStats(gcodeProcessorStats) {
-		if (!gcodeProcessorStats || !gcodeProcessorStats['final-job-vm']) return null;
+		if (!gcodeProcessorStats || !gcodeProcessorStats['final-job-vm']) return { time: 0, line: 0, lineCount: 0 };
 		return {
 			time: gcodeProcessorStats['final-job-vm'].totalTime,
 			line: gcodeProcessorStats['final-job-vm'].line,
