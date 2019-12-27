@@ -34,9 +34,17 @@ class OpListFiles extends Operation {
 			}
 			retfiles.push({
 				name: file,
-				type: type
+				type: type,
+				mtime: stat.mtime.toISOString()
 			});
 		}
+		retfiles.sort((a, b) => {
+			if (a.mtime > b.mtime) return -1;
+			if (a.mtime < b.mtime) return 1;
+			if (a.name < b.name) return -1;
+			if (a.name > b.name) return 1;
+			return 0;
+		});
 		return retfiles;
 	}
 }
