@@ -3,7 +3,7 @@ const blessed = require('blessed');
 
 function formatMinutes(secs) {
 	let hours = Math.floor(secs / 3600);
-	let minutes = Math.ceil((secs - hours * 3600) / 60);
+	let minutes = Math.floor((secs - hours * 3600) / 60);
 	if (minutes < 10) minutes = '0' + minutes;
 	return '' + hours + ':' + minutes;
 }

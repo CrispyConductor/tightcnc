@@ -560,7 +560,7 @@ class ConsoleUI extends EventEmitter {
 			if (status.job.progress) {
 				this.jobStatusBox.data.percentComplete = '' + status.job.progress.percentComplete.toFixed(1) + '%';
 				let hoursRemaining = Math.floor(status.job.progress.estTimeRemaining / 3600);
-				let minutesRemaining = Math.ceil((status.job.progress.estTimeRemaining - hoursRemaining * 3600) / 60);
+				let minutesRemaining = Math.floor((status.job.progress.estTimeRemaining - hoursRemaining * 3600) / 60);
 				if (minutesRemaining < 10) minutesRemaining = '0' + minutesRemaining;
 				this.jobStatusBox.data.timeRemaining = '' + hoursRemaining + ':' + minutesRemaining;
 			} else {
