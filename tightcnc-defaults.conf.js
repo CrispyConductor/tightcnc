@@ -33,6 +33,7 @@ module.exports = {
 		keepFiles: 2
 	},
 	consoleui: {
+		logDir: '/tmp/tightcnc-log',
 		log: {
 			updateInterval: 250,
 			updateBatchLimit: 200,

@@ -2,6 +2,9 @@ const blessed = require('blessed');
 const TightCNCClient = require('../../lib/clientlib');
 const pasync = require('pasync');
 const EventEmitter = require('events');
+const fs = require('fs');
+const path = require('path');
+const mkdirp = require('mkdirp');
 
 class ConsoleUI extends EventEmitter {
 
@@ -15,6 +18,41 @@ class ConsoleUI extends EventEmitter {
 		this.modes = {};
 		this.jobOptionClasses = {};
 		this.enableRendering = true;
+	}
+
+	async initLog() {
+		let logDir = this.config.consoleui.logDir;
+		await new Promise((resolve, reject) => {
+			mkdirp(logDir, (err) => {
+				if (err) reject(err);
+				else resolve();
+			});
+		});
+		this.logFilename = path.join(logDir, 'consoleui.log');
+		this.logFile = fs.openSync(this.logFilename, 'w');
+		this.curLogSize = 0;
+		this.maxLogSize = 2000000;
+		this.logInited = true;
+	}
+
+	log(...args) {
+		let str = '';
+		for (let arg of args) {
+			if (str) str += '; ';
+			str += '' + arg;
+		}
+		if (!this.logInited) {
+			console.log(str);
+		} else {
+			this.curLogSize += str.length + 1;
+			if (this.curLogSize >= this.maxLogSize) {
+				fs.closeSync(this.logFile);
+				this.logFile = fs.openSync(this.logFilename, 'w');
+			}
+			fs.write(this.logFile, '' + str + '\n', (err) => {
+				console.error('Error writing to log', err);
+			});
+		}
 	}
 
 	render() {
@@ -552,7 +590,7 @@ class ConsoleUI extends EventEmitter {
 
 	clientError(err) {
 		this.showTempMessage(err.message || err.msg || ('' + err));
-		console.log(err, err.stack);
+		this.log(err, err.stack);
 	}
 
 	runStatusUpdateLoop() {
@@ -627,6 +665,13 @@ class ConsoleUI extends EventEmitter {
 	}
 
 	async run() {
+		try {
+			await this.initLog();
+		} catch (err) {
+			console.error('Error initializing consoleui log', err, err.stack);
+			process.exit(1);
+		}
+
 		let initStatus = await this.initClient();
 		this.lastStatus = initStatus;
 		this.axisLabels = initStatus.controller.axisLabels;
@@ -640,6 +685,8 @@ class ConsoleUI extends EventEmitter {
 		this.runStatusUpdateLoop();
 
 		this.activateMode('home');
+
+		this.log('ConsoleUI Started');
 	}
 
 }
