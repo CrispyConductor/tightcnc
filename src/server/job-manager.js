@@ -35,7 +35,7 @@ class JobManager {
 		let progress = undefined;
 		let stats = this._mainJobStats(gcodeProcessorStatuses);
 		stats.predictedTime = stats.time;
-		let finalVMStatus = gcodeProcessorStatuses['final-job-vm'];
+		let finalVMStatus = gcodeProcessorStatuses && gcodeProcessorStatuses['final-job-vm'];
 		if (finalVMStatus && finalVMStatus.updateTime) {
 			let curTime = new Date(finalVMStatus.updateTime);
 			stats.updateTime = curTime.toISOString();
