@@ -45,10 +45,10 @@ class JobManager {
 				estTotalTime *= (curTime.getTime() - new Date(job.startTime).getTime()) / 1000 / job.stats.predictedTime;
 			}
 			progress = {
-				timeRunning: job.stats.time,
+				timeRunning: stats.time,
 				estTotalTime: estTotalTime,
-				estTimeRemaining: Math.max(estTotalTime - job.stats.time, 0),
-				percentComplete: Math.min(job.stats.time / (estTotalTime || 1) * 100, 100)
+				estTimeRemaining: Math.max(estTotalTime - stats.time, 0),
+				percentComplete: Math.min(stats.time / (estTotalTime || 1) * 100, 100)
 			};
 		}
 
@@ -204,6 +204,7 @@ class JobManager {
 			rawStrings: jobOptions.rawFile,
 			dryRun: true
 		});
+		let origSource = source;
 		source = source.through((gline) => {
 			// call hooks on each line (since there's no real controller to do it)
 			GcodeProcessor.callLineHooks(gline);
@@ -221,7 +222,7 @@ class JobManager {
 		}
 		// Get the job stats
 		let gpcStatuses = {};
-		let gpc = source.gcodeProcessorChainById || {};
+		let gpc = origSource.gcodeProcessorChainById || {};
 		for (let key in gpc) {
 			let s = gpc[key].getStatus();
 			if (s) {
