@@ -50,7 +50,7 @@ class ConsoleUI extends EventEmitter {
 				this.logFile = fs.openSync(this.logFilename, 'w');
 			}
 			fs.write(this.logFile, '' + str + '\n', (err) => {
-				console.error('Error writing to log', err);
+				if (err) console.error('Error writing to log', err);
 			});
 		}
 	}
