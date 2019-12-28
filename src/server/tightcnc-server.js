@@ -123,6 +123,13 @@ class TightCNCServer extends EventEmitter {
 		}
 	}
 
+	debug(str) {
+		if (!this.config.enableDebug) return;
+		if (this.loggerDisk) {
+			this.loggerDisk.log('other', 'Debug: ' + str);
+		}
+	}
+
 	validateDataFilename(filename, convertToAbsolute = false) {
 		if (path.isAbsolute(filename)) throw new XError(XError.INVALID_ARGUMENT, 'Only files in the data directory may be used');
 		if (filename.split(path.sep).indexOf('..') !== -1) throw new XError(XError.INVALID_ARGUMENT, 'Only files in the data directory may be used');

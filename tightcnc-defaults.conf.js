@@ -32,6 +32,7 @@ module.exports = {
 		maxFileSize: 1000000,
 		keepFiles: 2
 	},
+	enableDebug: false,
 	consoleui: {
 		logDir: '/tmp/tightcnc-log',
 		log: {
