@@ -42,23 +42,19 @@ class ModeLog extends ConsoleUIMode {
 	}
 
 	startLogUpdateLoop() {
-		this.updateLoopRunning = true;
-		this.logUpdating = false;
-		setInterval(() => {
-			if (this.logUpdating) return;
-			this.logUpdating = true;
-			this.updateLog()
-				.then((updated) => {
-					this.logUpdating = false;
+		const runLoop = async() => {
+			await this.consoleui.serverPollLoop(async() => {
+				try {
+					let updated = await this.updateLog();
 					if (this.modeActive && updated) {
 						this.refreshLogDisplay();
 					}
-				})
-				.catch((err) => {
+				} catch (err) {
 					this.consoleui.clientError(err);
-					this.logUpdating = false;
-				});
-		}, this.logConfig.updateInterval);
+				}
+			}, this.logConfig.updateInterval);
+		};
+		runLoop().catch(this.consoleui.clientError.bind(this));
 	}
 
 	activateMode() {

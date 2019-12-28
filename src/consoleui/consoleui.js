@@ -596,10 +596,8 @@ class ConsoleUI extends EventEmitter {
 	}
 
 	runStatusUpdateLoop() {
-		const updateInterval = 250;
 		const runLoop = async() => {
-			while (true) {
-				await pasync.setTimeout(updateInterval);
+			await this.serverPollLoop(async() => {
 				let status;
 				try {
 					status = await this.client.op('getStatus');
@@ -611,7 +609,7 @@ class ConsoleUI extends EventEmitter {
 					this.clientError(err);
 				}
 				this.updatePrimaryStatusBoxes(status);
-			}
+			});
 		};
 		runLoop().catch(this.clientError.bind(this));
 	}
@@ -664,6 +662,17 @@ class ConsoleUI extends EventEmitter {
 
 	registerHomeKey(keys, keyNames, keyLabel, fn) {
 		this.modes['home'].registerHomeKey(keys, keyNames, keyLabel, fn);
+	}
+
+	async serverPollLoop(fn, minInterval = 300) {
+		while (true) {
+			let t1 = new Date().getTime();
+			await fn();
+			let t2 = new Date().getTime();
+			let tDiff = t2 - t1;
+			let waitTime = Math.max(minInterval, tDiff);
+			await pasync.setTimeout(waitTime);
+		}
 	}
 
 	async run() {
