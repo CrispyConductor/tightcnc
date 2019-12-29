@@ -1173,7 +1173,9 @@ class TinyGController extends Controller {
 
 	cancel() {
 		if (!this.held) this.hold();
-		this.sendLine('%');
+		this.sendLine('%'); // wipe planner buffer and serial buffer; sendLine() also intercepts this to clean other stuff up
+		this.sendLine('M5'); // spindle off
+		this.sendLine('M9'); // coolant off
 	}
 
 	reset() {
