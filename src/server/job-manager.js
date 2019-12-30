@@ -4,6 +4,7 @@ const zstreams = require('zstreams');
 const GcodeProcessor = require('../../lib/gcode-processor');
 const fs = require('fs');
 const path = require('path');
+const JobState = require('./job-state');
 
 class JobManager {
 
@@ -15,9 +16,9 @@ class JobManager {
 	initialize() {
 	}
 
-	getStatus() {
-		if (!this.currentJob) return null;
-		let job = this.currentJob;
+	getStatus(job) {
+		if (!job) job = this.currentJob;
+		if (!job) return null;
 
 		// Fetch the status from each gcode processor
 		let gcodeProcessorStatuses = undefined;
@@ -57,11 +58,11 @@ class JobManager {
 
 		// Return status
 		return {
-			state: this.currentJob.state,
-			jobOptions: this.currentJob.jobOptions,
-			dryRunResults: this.currentJob.dryRunResults,
-			startTime: this.currentJob.startTime,
-			error: this.currentJob.state === 'error' ? this.currentJob.error.toString() : null,
+			state: job.state,
+			jobOptions: job.jobOptions,
+			dryRunResults: job.dryRunResults,
+			startTime: job.startTime,
+			error: job.state === 'error' ? job.error.toString() : null,
 			gcodeProcessors: gcodeProcessorStatuses,
 			stats: stats,
 			progress: progress
@@ -123,12 +124,12 @@ class JobManager {
 			throw new XError(XError.INTERNAL_ERROR, 'Controller not ready.');
 		}
 		// Create the current job object
-		this.currentJob = {
+		this.currentJob = new JobState({
 			state: 'initializing',
 			jobOptions: origJobOptions,
 			dryRunResults: dryRunResults,
 			startTime: new Date().toISOString()
-		};
+		});
 		job = this.currentJob;
 
 		// Wait for the controller to stop moving
@@ -148,11 +149,14 @@ class JobManager {
 		});
 		job.sourceStream = source;
 
+		job.emitJobStart();
+
 		// Pipe it to the controller, asynchronously
 		this.tightcnc.debug('startJob pipe stream');
 		this.tightcnc.controller.sendStream(source)
 			.then(() => {
 				job.state = 'complete';
+				job.emitJobComplete();
 			})
 			.catch((err) => {
 				if (err.code === XError.CANCELLED) {
@@ -163,6 +167,7 @@ class JobManager {
 					console.error('Job error: ' + err);
 					console.error(err.stack);
 				}
+				job.emitJobError(err);
 			});
 
 		// Wait until the processorChainReady event (or chainerror event) fires on source (indicating any preprocessing is done)
@@ -189,7 +194,7 @@ class JobManager {
 
 		this.tightcnc.debug('End startJob');
 
-		return this.getStatus();
+		return this.getStatus(job);
 	}
 
 	async dryRunJob(jobOptions, outputFile = null) {
@@ -210,6 +215,14 @@ class JobManager {
 				}
 			});
 		}
+
+		let job = new JobState({
+			state: 'initializing',
+			jobOptions: origJobOptions,
+			startTime: new Date().toISOString(),
+			dryRun: true
+		});
+
 		// Do dry run to get overall stats
 		this.tightcnc.debug('Dry run getGcodeSourceStream');
 		let source = this.tightcnc.getGcodeSourceStream({
@@ -225,6 +238,13 @@ class JobManager {
 			return gline;
 		});
 
+		job.sourceStream = source;
+		job.state = 'running';
+
+		origSource.on('processorChainReady', (_chain, chainById) => {
+			job.gcodeProcessors = chainById;
+		});
+
 		this.tightcnc.debug('Dry run stream');
 		if (outputFile) {
 			await source
@@ -237,23 +257,28 @@ class JobManager {
 			await source.pipe(new zstreams.BlackholeStream({ objectMode: true })).intoPromise();
 		}
 
+		job.state = 'complete';
+		if (!job.gcodeProcessors) job.gcodeProcessors = origSource.gcodeProcessorChainById || {};
+
 		// Get the job stats
 		this.tightcnc.debug('Dry run get stats');
-		let gpcStatuses = {};
+		/*let gpcStatuses = {};
 		let gpc = origSource.gcodeProcessorChainById || {};
 		for (let key in gpc) {
 			let s = gpc[key].getStatus();
 			if (s) {
 				gpcStatuses[key] = s;
 			}
-		}
+		}*/
+		let ret = this.getStatus(job);
 
 		this.tightcnc.debug('End dryRunJob');
-		return {
+		/*return {
 			jobOptions: origJobOptions,
 			stats: this._mainJobStats(gpcStatuses),
 			gcodeProcessors: gpcStatuses
-		};
+		};*/
+		return ret;
 	}
 }
 
