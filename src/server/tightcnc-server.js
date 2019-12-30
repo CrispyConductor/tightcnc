@@ -198,6 +198,7 @@ class TightCNCServer extends EventEmitter {
 	 *     @param {Object} options.gcodeProcessors.#.options - Additional options to pass to gcode processor constructor.
 	 *   @param {Boolean} options.rawStrings=false - If true, the stream returns strings (lines) instead of GcodeLine instances.
 	 *   @param {Boolean} options.dryRun=false - If true, sets dryRun flag on gcode processors.
+	 *   @param {JobState} options.job - Optional job object associated.
 	 * @return {ReadableStream} - a readable object stream of GcodeLine instances.  The stream will have
 	 *   the additional property 'gcodeProcessorChain' containing an array of all GcodeProcessor's in the chain.  This property
 	 *   is only available once the 'processorChainReady' event is fired on the returned stream;
@@ -225,6 +226,7 @@ class TightCNCServer extends EventEmitter {
 				if (!cls) throw new XError(XError.NOT_FOUND, 'Gcode processor not found: ' + gcpspec.name);
 				let opts = objtools.deepCopy(gcpspec.options || {});
 				opts.tightcnc = this;
+				if (options.job) opts.job = options.job;
 				let inst = new cls(opts);
 				if (options.dryRun) inst.dryRun = true;
 				gcpspec.inst = inst;

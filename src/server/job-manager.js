@@ -145,7 +145,8 @@ class JobManager {
 		let source = this.tightcnc.getGcodeSourceStream({
 			filename: jobOptions.filename,
 			gcodeProcessors: jobOptions.gcodeProcessors,
-			rawStrings: jobOptions.rawFile
+			rawStrings: jobOptions.rawFile,
+			job: job
 		});
 		job.sourceStream = source;
 
@@ -229,7 +230,8 @@ class JobManager {
 			filename: jobOptions.filename,
 			gcodeProcessors: jobOptions.gcodeProcessors,
 			rawStrings: jobOptions.rawFile,
-			dryRun: true
+			dryRun: true,
+			job: job
 		});
 		let origSource = source;
 		source = source.through((gline) => {
