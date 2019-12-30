@@ -5,13 +5,25 @@ module.exports = {
 	controller: 'TinyG',
 	controllers: {
 		TinyG: {
+			// serial port settings
 			port: '/dev/ttyUSB0',
 			baudRate: 115200,
 			dataBits: 8,
 			stopBits: 1,
 			parity: 'none',
 			rtscts: true,
-			xany: false
+			xany: false,
+
+			usedAxes: [ true, true, true, false, false, false ], // which axes of xyzabc are actually used
+			homableAxes: [ true, true, true ], // which axes can be homed
+
+			// This parameter governs how "aggressive" we can be with queueing data to the device.  The tightcnc controller
+			// software already adjusts data queueing to make sure front-panel commands can be immediately handled, but
+			// sometimes the tinyg seems to get desynced, and on occasion, it seems to crash under these circumstances
+			// (with an error similar to "cannot get planner buffer").  If this is happening to you, try reducing this number.
+			// The possible negative side effect is that setting this number too low may cause stuttering with lots of fast
+			// moves.  Setting this to 4 is the equivalent of the tinyg "line mode" protocol.
+			maxUnackedRequests: 32
 		}
 	},
 	dataDir: '/tmp/tightcnc-data',

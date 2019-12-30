@@ -4,20 +4,8 @@ const XError = require('xerror');
 const pasync = require('pasync');
 const GcodeLine = require('../../lib/gcode-line');
 const AbbrJSON = require('./tinyg-abbr-json');
-const gcodeParser = require('gcode-parser');
 const CrispHooks = require('crisphooks');
 
-
-// Wrapper on top of gcode-parser to parse a line and return a map from word keys to values
-function gparse(line) {
-	let p = gcodeParser.parseLine(line);
-	if (!p || !p.words || !p.words.length) return null;
-	let r = {};
-	for (let pair of p.words) {
-		r[pair[0].toUpperCase()] = pair[1];
-	}
-	return r;
-}
 
 /**
  * This is the controller interface class for TinyG.
@@ -291,7 +279,7 @@ class TinyGController extends Controller {
 	_checkSendToDevice() {
 		if (this._waitingForSync || this._disableSending) return false; // don't send anything more until state has synchronized
 		// Don't send more if we haven't received responses for more than a threshold number
-		const maxUnackedRequests = 36;
+		const maxUnackedRequests = this.config.maxUnackedRequests || 32;
 		let numUnackedRequests = this.sendQueueIdxToSend - this.sendQueueIdxToReceive;
 		if (numUnackedRequests >= maxUnackedRequests) return false;
 		// We can send more if either 1) The serial receive buffer is filled less than 4 lines (recommended as per tinyg docs), or 2) The planner
