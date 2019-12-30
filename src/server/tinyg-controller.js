@@ -573,9 +573,20 @@ class TinyGController extends Controller {
 		return str === '!' || str === '%' || str === '~' || str === '\x18';
 	}
 
+	// Temporarily disable sending anything to the machine for a period of time to wait for it to catch up or something
+	_tempDisableSending(time = 500) {
+		let origDisableSending = this._disableSending;
+		this._disableSending = true;
+		setTimeout(() => {
+			if (this._disableSending === true) this._disableSending = origDisableSending;
+			this._checkSendLoop();
+		}, time);
+	}
+
 	_handleSendImmediateCommand(str) {
 		this._writeToSerial(str);
 		str = str.trim();
+		this.emit('sent', str);
 		if (str === '!') {
 			this.held = true;
 		} else if (str === '~') {
@@ -583,9 +594,11 @@ class TinyGController extends Controller {
 		} else if (str === '%') {
 			this._cancelRunningOps(new XError(XError.CANCELLED, 'Operation cancelled'));
 			this.held = false;
+			this._tempDisableSending();
 		} else if (str === '\x18') {
 			this._cancelRunningOps(new XError(XError.CANCELLED, 'Machine reset'));
 			this.ready = false; // will be set back to true once SYSTEM READY message received
+			this._tempDisableSending();
 		}
 	}
 
