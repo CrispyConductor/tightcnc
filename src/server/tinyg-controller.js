@@ -115,7 +115,7 @@ class TinyGController extends Controller {
 	}
 
 	// Calls executing hooks corresponding to front entry in planner mirror
-	_commsCallExecutingHooks() {
+	_commsCallExecutingHooks(minLineId = -1) {
 		let lineidRange = this.plannerMirror[0];
 		if (lineidRange) {
 			let topLineId = lineidRange[1]; // max line id inclusive
@@ -125,7 +125,7 @@ class TinyGController extends Controller {
 				let sqEntry = this.sendQueue[sqIdx];
 				sqIdx++;
 				// run hooks if present
-				if (sqEntry.hooks) {
+				if (sqEntry.hooks && sqEntry.lineid >= minLineId) {
 					sqEntry.hooks.triggerSync('executing', sqEntry);
 				}
 			}
@@ -133,8 +133,16 @@ class TinyGController extends Controller {
 	}
 
 	// Removes everything in plannerMirror, resolving all the hooks for entries in it
+	// Used in (apparently frequent) cases of desyncs
 	_commsSyncPlannerMirror() {
+		// shift everything off the planner queue
 		while (this.plannerMirror.length > 0) {
+			this._commsShiftPlannerMirror();
+		}
+		// if there's anything left in sendQueue that never made its way onto the planner queue after being acked (ie, no qr was received after), handle that
+		if (this.sendQueueIdxToReceive > 0) {
+			this.plannerMirror.push([ this.sendQueue[0].lineid, this.sendQueue[sendQueueIdxToReceive - 1].lineid ]);
+			this._commsCallExecutingHooks();
 			this._commsShiftPlannerMirror();
 		}
 	}
@@ -203,14 +211,20 @@ class TinyGController extends Controller {
 					if (pmentry[1] < lineIdEnd) {
 						pmentry[1] = lineIdEnd;
 					}
+					// call executing hooks if first in queue (minLineId is passed here to prevent calling the executing hook again on existing members)
+					if (this.plannerMirror.length === 1) this._commsCallExecutingHooks(lineIdStart);
 				} else {
 					this.plannerMirror[this.plannerMirror.length - 1] = [ lineIdStart, lineIdEnd ];
+					// call executing hooks if first in queue
+					if (this.plannerMirror.length === 1) this._commsCallExecutingHooks();
 				}
 			} else {
 				// There's no planner queue mirror entry to associate these with, so add one.  This will cause
 				// plannerMirror to become desynced from the qis and qos, so also shift an additional entry off later.
 				this.plannerMirror.push([ lineIdStart, lineIdEnd ]);
 				shiftPlannerMirrorExtra++;
+				// call executing hooks if first in queue
+				if (this.plannerMirror.length === 1) this._commsCallExecutingHooks();
 			}
 		}
 
