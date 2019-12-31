@@ -589,7 +589,7 @@ class TinyGController extends Controller {
 	}
 
 	// Temporarily disable sending anything to the machine for a period of time to wait for it to catch up or something
-	_tempDisableSending(time = 500) {
+	_tempDisableSending(time = 1500) {
 		let origDisableSending = this._disableSending;
 		this._disableSending = true;
 		setTimeout(() => {
@@ -609,6 +609,7 @@ class TinyGController extends Controller {
 		} else if (str === '%') {
 			this._cancelRunningOps(new XError(XError.CANCELLED, 'Operation cancelled'));
 			this.held = false;
+			// I've found that things sent very shortly after a % can somehow get "lost".  So wait a while before sending anything more.
 			this._tempDisableSending();
 		} else if (str === '\x18') {
 			this._cancelRunningOps(new XError(XError.CANCELLED, 'Machine reset'));
