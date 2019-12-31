@@ -141,7 +141,7 @@ class TinyGController extends Controller {
 		}
 		// if there's anything left in sendQueue that never made its way onto the planner queue after being acked (ie, no qr was received after), handle that
 		if (this.sendQueueIdxToReceive > 0) {
-			this.plannerMirror.push([ this.sendQueue[0].lineid, this.sendQueue[sendQueueIdxToReceive - 1].lineid ]);
+			this.plannerMirror.push([ this.sendQueue[0].lineid, this.sendQueue[this.sendQueueIdxToReceive - 1].lineid ]);
 			this._commsCallExecutingHooks();
 			this._commsShiftPlannerMirror();
 		}
@@ -164,6 +164,7 @@ class TinyGController extends Controller {
 				this.sendQueueIdxToSend--;
 				this.sendQueueIdxToReceive--;
 				this.sendQueueIdxToRecvAtLastQr--;
+				if (this.sendQueueIdxToRecvAtLastQr < 0) this.sendQueueIdxToRecvAtLastQr = 0;
 			}
 		}
 		// Call executing hooks corresponding to next planner queue entry
