@@ -225,6 +225,8 @@ class ModeNewJob extends ConsoleUIMode {
 		for (let key in this.jobOptionInstances) {
 			this.jobOptionInstances[key].addToJobOptions(obj);
 		}
+		// This event allows other components to hook into and modify the job options object just before it is sent
+		this.consoleui.emit('newJobObject', obj);
 		return obj;
 	}
 
