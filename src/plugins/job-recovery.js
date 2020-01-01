@@ -30,7 +30,7 @@ class JobRecoveryTracker extends GcodeProcessor {
 
 		const saveLoop = async() => {
 			while (!this.hasEnded) {
-				await pasync.setTimeout(this.recoverySaveInterval);
+				await pasync.setTimeout(this.recoverySaveInterval * 1000);
 				if (this.hasEnded) break;
 				let data = JSON.stringify(this.saveData) + '\n';
 				await new Promise((resolve, reject) => {
