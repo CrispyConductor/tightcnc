@@ -22,6 +22,7 @@ const objtools = require('objtools');
 const pasync = require('pasync');
 const fs = require('fs');
 const path = require('path');
+const ListForm = require('../consoleui/list-form');
 
 const getRecoveryFilename = (tightcnc) => {
 	return path.resolve(tightcnc.config.dataDir, tightcnc.config.recoveryFile || '_recovery.json');
@@ -367,6 +368,52 @@ class JobRecoveryOperation extends Operation {
 }
 
 
+/*
+ * This handles recovering a job in the console ui.  It's registered to run on a keypress from the home
+ * screen, and just displays a few dialogs before starting the recovery operation.
+ */
+function consoleUIRecoverJob(consoleui) {
+
+	async function doRecover() {
+		// Ask how much time to back up
+		let form = new ListForm(consoleui);
+		let recoverySettings = await form.showEditor(consoleui.mainPane, {
+			type: 'object',
+			label: 'Job Recovery Settings',
+			doneLabel: '[Start Recovery]',
+			properties: {
+				backUpTime: {
+					type: 'number',
+					label: 'Rewind Time (s)',
+					default: 5,
+					required: true
+				}
+			}
+		});
+
+		// Show confirmation
+		let text = 'Job recovery is about to start.  Please ensure that your recovery settings are correct, particularly with regard to clearance movements and positions.  Also ensure that the device\'s coordinate system is set up to match the original job\'s.  Press ENTER to begin or Esc to cancel.';
+		let confirmed = await consoleui.showConfirm('', { okLabel: 'Start' });
+		if (!confirmed) return;
+
+		// Start job
+		await consoleui.runWithWait(async() => {
+			await consoleui.client.op('recoverJob', recoverySettings);
+		}, 'Initializing ...');
+		this.consoleui.showTempMessage('Starting job.');
+
+		// Go to job info mode
+		consoleui.activateMode('jobInfo');
+	}
+
+	doRecover()
+		.catch((err) => {
+			consoleui.clientError(err);
+		});
+
+}
+
+
 module.exports.JobRecoveryTracker = JobRecoveryTracker;
 module.exports.JobRecoveryProcessor = JobRecoveryProcessor;
 module.exports.JobRecoveryOperation = JobRecoveryOperation;
@@ -378,6 +425,7 @@ module.exports.registerServerComponents = function (tightcnc) {
 };
 
 module.exports.registerConsoleUIComponents = function (consoleui) {
+	// Automatically add recovery tracker to all jobs created in the console UI
 	consoleui.on('newJobObject', (jobOptions) => {
 		if (!jobOptions.gcodeProcessors) jobOptions.gcodeProcessors = [];
 		jobOptions.gcodeProcessors.push({
@@ -385,5 +433,8 @@ module.exports.registerConsoleUIComponents = function (consoleui) {
 			options: {}
 		});
 	});
+
+	// Add a key to recover a job to the home screen
+	consoleui.registerHomeKey([ 'r', 'R' ], 'r', 'Recovery Job', () => consoleUIRecoverJob(consoleui));
 };
 
