@@ -293,7 +293,7 @@ class JobRecoveryProcessor extends GcodeProcessor {
 					vmStateBefore: vmStateBefore
 				});
 			}
-			beginRecovery();
+			this.beginRecovery();
 		} else {
 			// Blackhole the gline by calling all the hooks on it
 			gline.triggerSync('queued');
@@ -393,7 +393,7 @@ function consoleUIRecoverJob(consoleui) {
 
 		// Show confirmation
 		let text = 'Job recovery is about to start.  Please ensure that your recovery settings are correct, particularly with regard to clearance movements and positions.  Also ensure that the device\'s coordinate system is set up to match the original job\'s.  Press ENTER to begin or Esc to cancel.';
-		let confirmed = await consoleui.showConfirm('', { okLabel: 'Start' });
+		let confirmed = await consoleui.showConfirm(text, { okLabel: 'Start' });
 		if (!confirmed) return;
 
 		// Start job
@@ -435,6 +435,6 @@ module.exports.registerConsoleUIComponents = function (consoleui) {
 	});
 
 	// Add a key to recover a job to the home screen
-	consoleui.registerHomeKey([ 'r', 'R' ], 'r', 'Recovery Job', () => consoleUIRecoverJob(consoleui));
+	consoleui.registerHomeKey([ 'r', 'R' ], 'r', 'Recover Job', () => consoleUIRecoverJob(consoleui));
 };
 
