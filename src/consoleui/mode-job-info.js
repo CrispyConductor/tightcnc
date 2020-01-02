@@ -55,7 +55,7 @@ class ModeJobInfo extends ConsoleUIMode {
 	init() {
 		super.init();
 		
-		this.consoleui.registerHomeKey([ 'j', 'J' ], 'j', 'Job Info', () => this.consoleui.activateMode('jobInfo'));
+		this.consoleui.registerHomeKey([ 'j', 'J' ], 'j', 'Job Info', () => this.consoleui.activateMode('jobInfo'), 4);
 		
 		this.registerModeKey([ 'escape' ], [ 'Esc' ], 'Home', () => this.consoleui.exitMode());
 

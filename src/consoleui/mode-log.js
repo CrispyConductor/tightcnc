@@ -116,7 +116,7 @@ class ModeLog extends ConsoleUIMode {
 			this.consoleui.render();
 		};
 
-		this.consoleui.registerHomeKey([ 'l', 'L' ], 'l', 'Log Mode', () => this.consoleui.activateMode('log'));
+		this.consoleui.registerHomeKey([ 'l', 'L' ], 'l', 'Log Mode', () => this.consoleui.activateMode('log'), 2);
 		
 		this.registerModeKey([ 'escape' ], [ 'Esc' ], 'Home', () => this.consoleui.exitMode());
 		this.registerModeKey([ 'pageup' ], [ 'PgUp' ], 'Scroll Up', scrollUp);

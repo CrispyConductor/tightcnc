@@ -21,8 +21,15 @@ class ConsoleUIMode {
 	/**
 	 * Registers a hint to be automatically activated when the mode is activated, and deactivated when the mode is exited.
 	 */
-	registerModeHint(keyNames, label) {
-		this.modeHints.push({ keyNames, label });
+	registerModeHint(keyNames, label, order = 1000) {
+		let pos = this.modeHints.length;
+		for (let i = 0; i < this.modeHints.length; i++) {
+			if (this.modeHints[i].order > order) {
+				pos = i;
+				break;
+			}
+		}
+		this.modeHints.splice(pos, 0, { keyNames, label, order });
 	}
 
 	registerModeKey(keys, keyNames, keyLabel, fn) {

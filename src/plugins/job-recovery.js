@@ -400,7 +400,7 @@ function consoleUIRecoverJob(consoleui) {
 		await consoleui.runWithWait(async() => {
 			await consoleui.client.op('recoverJob', recoverySettings);
 		}, 'Initializing ...');
-		this.consoleui.showTempMessage('Starting job.');
+		consoleui.showTempMessage('Starting job.');
 
 		// Go to job info mode
 		consoleui.activateMode('jobInfo');

@@ -150,7 +150,7 @@ class ModeControl extends ConsoleUIMode {
 		this.box.append(text);
 		text.setIndex(10);
 		this._centerTextBox = text;
-		this.consoleui.registerHomeKey([ 'c', 'C' ], 'c', 'Control Mode', () => this.consoleui.activateMode('control'));
+		this.consoleui.registerHomeKey([ 'c', 'C' ], 'c', 'Control Mode', () => this.consoleui.activateMode('control'), 1);
 
 		const handleError = (err) => this.consoleui.clientError(err);
 

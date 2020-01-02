@@ -344,7 +344,7 @@ class ModeNewJob extends ConsoleUIMode {
 		this.box.append(this.jobInfoBox);
 		this.updateJobInfoText();
 
-		this.consoleui.registerHomeKey([ 'n', 'N' ], 'n', 'New Job', () => this.consoleui.activateMode('newJob'));
+		this.consoleui.registerHomeKey([ 'n', 'N' ], 'n', 'New Job', () => this.consoleui.activateMode('newJob'), 3);
 		
 		this.registerModeKey([ 'escape' ], [ 'Esc' ], 'Home', () => this.consoleui.exitMode());
 		this.registerModeKey([ 'f' ], [ 'f' ], 'Select File', () => this.selectJobFile());

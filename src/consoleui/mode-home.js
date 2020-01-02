@@ -20,7 +20,7 @@ class ModeHome extends ConsoleUIMode {
 			align: 'center'
 		});
 		this.box.append(text);
-		this.registerHomeKey([ 'escape', 'q' ], 'Esc', 'Exit', () => process.exit(0));
+		this.registerHomeKey([ 'escape', 'q' ], 'Esc', 'Exit', () => process.exit(0), 0);
 	}
 
 	activateMode() {
@@ -37,10 +37,19 @@ class ModeHome extends ConsoleUIMode {
 		super.exitMode();
 	}
 
-	registerHomeKey(keys, keyNames, keyLabel, fn) {
-		this.registerModeHint(keyNames, keyLabel);
+	registerHomeKey(keys, keyNames, keyLabel, fn, order = 1000) {
+		this.registerModeHint(keyNames, keyLabel, order);
 		if (!Array.isArray(keys)) keys = [ keys ];
-		this.homeKeys.push({ keys, keyNames, keyLabel, fn });
+
+		let pos = this.homeKeys.length;
+		for (let i = 0; i < this.homeKeys.length; i++) {
+			if (this.homeKeys[i].order > order) {
+				pos = i;
+				break;
+			}
+		}
+
+		this.homeKeys.splice(pos, 0, { keys, keyNames, keyLabel, fn, order });
 	}
 
 }

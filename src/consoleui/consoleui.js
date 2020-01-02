@@ -660,8 +660,8 @@ class ConsoleUI extends EventEmitter {
 		}
 	}
 
-	registerHomeKey(keys, keyNames, keyLabel, fn) {
-		this.modes['home'].registerHomeKey(keys, keyNames, keyLabel, fn);
+	registerHomeKey(keys, keyNames, keyLabel, fn, order = 1000) {
+		this.modes['home'].registerHomeKey(keys, keyNames, keyLabel, fn, order);
 	}
 
 	async serverPollLoop(fn, minInterval = 300) {
