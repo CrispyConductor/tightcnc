@@ -44,6 +44,22 @@ module.exports = {
 		maxFileSize: 1000000,
 		keepFiles: 2
 	},
+	recovery: {
+		// rewind this number of seconds before the point where the job stopped
+		backUpTime: 3,
+		// additionall back up for this number of lines before that (to account for uncertainty in which lines have been executed)
+		backUpLines: 10,
+		// This is a list of gcode lines to execute to move the machine into a clearance position where it won't hit the workpiece
+		// The values {x}, {y}, etc. are replaced with the coordinates of the position (touching the workpiece) to resume the job.
+		moveToClearance: [
+			'G53 G0 Z0',
+			'G0 X{x} Y{y}'
+		],
+		// List of gcode lines to execute to move from the clearance position to the position to restart the job.
+		moveToWorkpiece: [
+			'G1 Z{z}'
+		]
+	},
 	enableDebug: false,
 	consoleui: {
 		logDir: '/tmp/tightcnc-log',
