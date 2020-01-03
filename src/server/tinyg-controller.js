@@ -785,7 +785,12 @@ class TinyGController extends Controller {
 
 	_retryConnect() {
 		if (!this._retryConnectFlag) return;
-		setTimeout(() => this.initConnection(true), 5000);
+		if (this._waitingToRetry) return;
+		this._waitingToRetry = true;
+		setTimeout(() => {
+			this._waitingToRetry = false;
+			this.initConnection(true);
+		}, 5000);
 	}
 
 	_numInFlightRequests() {
@@ -863,7 +868,7 @@ class TinyGController extends Controller {
 		if ('r' in data && data.r.msg === 'SYSTEM READY') {
 			let err = new XError(XError.CANCELLED, 'Machine reset');
 			this.close(err);
-			this._retryConnect();
+			if (!this._initializing) this._retryConnect();
 			return;
 		}
 
