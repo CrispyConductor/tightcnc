@@ -76,6 +76,8 @@ class TinyGController extends Controller {
 		// Counter storing the next free line id to use
 		this.lineIdCounter = 1;
 
+		this.resetOnConnect = false;
+
 		this.synced = true;
 
 		this.axisLabels = [ 'x', 'y', 'z', 'a', 'b', 'c' ];
@@ -672,6 +674,13 @@ class TinyGController extends Controller {
 				});
 			});
 
+			if (this.resetOnConnect) {
+				this.resetOnConnect = false;
+				this.serial.write('\x18\n');
+				await pasync.setTimeout(5000);
+				this.serial.read(); // drain the serial buffer
+			}
+
 			// Initialize serial buffers and initial variables
 			this.serialReceiveBuf = '';
 			this.currentStatusReport = {};
@@ -1196,7 +1205,11 @@ class TinyGController extends Controller {
 	}
 
 	reset() {
-		this.sendLine('\x18');
+		if (this.serial) {
+			this.sendLine('\x18');
+		} else {
+			this.resetOnConnect = true;
+		}
 	}
 
 	async home(axes = null) {
