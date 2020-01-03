@@ -88,6 +88,7 @@ class JobManager {
 	 *     options for each.
 	 *     @param {String} options.gcodeProcessors.#.name - Name of gcode processor.
 	 *     @param {Object} options.gcodeProcessors.#.options - Additional options to pass to gcode processor constructor.
+	 *     @param {Number} options.gcodeProcessors.#.order - Optional order number
 	 *   @param {Boolean} [options.rawFile=false] - If true, pass the file unaltered to the controller, without running
 	 *     any gcode processors.  (Will disable status reports)
 	 */
@@ -113,7 +114,8 @@ class JobManager {
 				options: {
 					id: 'final-job-vm',
 					updateOnHook: 'executed'
-				}
+				},
+				order: 1000000
 			});
 		}
 		// Check to ensure current job isn't running and that the controller is ready
@@ -213,7 +215,8 @@ class JobManager {
 				name: 'gcodevm',
 				options: {
 					id: 'final-job-vm'
-				}
+				},
+				order: 1000000
 			});
 		}
 

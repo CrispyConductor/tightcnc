@@ -9,8 +9,9 @@ const jobOptionsSchema = {
 	rawFile: { type: Boolean, default: false, description: 'Do not process the gcode in the file at all.  Also disables stats.' },
 	gcodeProcessors: [
 		{
-			name: { type: String, description: 'Name of gcode processor' },
-			options: { type: 'mixed', description: 'Options to pass to the gcode processor' }
+			name: { type: String, description: 'Name of gcode processor', required: true },
+			options: { type: 'mixed', description: 'Options to pass to the gcode processor', default: {} },
+			order: { type: 'number', description: 'Optional order number for gcode processor position in chain' }
 		}
 	]
 };

@@ -348,7 +348,8 @@ class JobRecoveryOperation extends Operation {
 			name: 'recoveryprocessor',
 			options: {
 				backUpTime: params.backUpTime
-			}
+			},
+			order: 500000
 		};
 		let foundRecoveryTracker = false;
 		for (let i = 0; i < jobOptions.gcodeProcessors.length; i++) {
@@ -429,7 +430,8 @@ module.exports.registerConsoleUIComponents = function (consoleui) {
 		if (!jobOptions.gcodeProcessors) jobOptions.gcodeProcessors = [];
 		jobOptions.gcodeProcessors.push({
 			name: 'recoverytracker',
-			options: {}
+			options: {},
+			order: 400000
 		});
 	});
 

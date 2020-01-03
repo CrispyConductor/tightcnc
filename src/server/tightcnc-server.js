@@ -10,6 +10,7 @@ const EventEmitter = require('events');
 const path = require('path');
 const fs = require('fs');
 const JobManager = require('./job-manager');
+const stable = require('stable');
 
 /**
  * This is the central class for the application server.  Operations, gcode processors, and controllers
@@ -212,6 +213,8 @@ class TightCNCServer extends EventEmitter {
 	 *     instances under the key 'inst' (unless the 'inst' key already exists, in which case it is used).
 	 *     @param {String} options.gcodeProcessors.#.name - Name of gcode processor.
 	 *     @param {Object} options.gcodeProcessors.#.options - Additional options to pass to gcode processor constructor.
+	 *     @param {Number} [options.gcodeProcessors.#.order] - Optional order number.  Gcode processors with associated order numbers
+	 *       are reordered according to the numbers.
 	 *   @param {Boolean} options.rawStrings=false - If true, the stream returns strings (lines) instead of GcodeLine instances.
 	 *   @param {Boolean} options.dryRun=false - If true, sets dryRun flag on gcode processors.
 	 *   @param {JobState} options.job - Optional job object associated.
@@ -231,9 +234,18 @@ class TightCNCServer extends EventEmitter {
 			}
 		}
 
+		// Sort gcode processors
+		let sortedGcodeProcessors = stable(options.gcodeProcessors || [], (a, b) => {
+			let aorder = ('order' in a) ? a.order : 0;
+			let border = ('order' in b) ? b.order : 0;
+			if (aorder > border) return 1;
+			if (aorder < border) return -1;
+			return 0;
+		});
+
 		// Construct gcode processor chain
 		let gcodeProcessorInstances = [];
-		for (let gcpspec of (options.gcodeProcessors || [])) {
+		for (let gcpspec of sortedGcodeProcessors) {
 			if (gcpspec.inst) {
 				if (options.dryRun) gcpspec.inst.dryRun = true;
 				gcodeProcessorInstances.push(gcpspec.inst);
