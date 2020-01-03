@@ -4,6 +4,7 @@ const LoggerDisk = require('./logger-disk');
 const LoggerMem = require('./logger-mem');
 const mkdirp = require('mkdirp');
 const GcodeProcessor = require('../../lib/gcode-processor');
+const GcodeLine = require('../../lib/gcode-line');
 const zstreams = require('zstreams');
 const EventEmitter = require('events');
 const path = require('path');
@@ -68,8 +69,9 @@ class TightCNCServer extends EventEmitter {
 		// Whether to suppress duplicate error messages from being output sequentially
 		const suppressDuplicateErrors = this.config.suppressDuplicateErrors === undefined ? true : this.config.suppressDuplicateErrors;
 
-		// Create data directory if it doesn't exist
+		// Create directories if missing
 		this.getFilename(null, 'data', true, true, true);
+		this.getFilename(null, 'macro', true, true, true);
 
 		// Initialize the disk and in-memory communications loggers
 		this.loggerDisk = new LoggerDisk(this.config.logger, this);
@@ -248,6 +250,45 @@ class TightCNCServer extends EventEmitter {
 			}
 		}
 		return GcodeProcessor.buildProcessorChain(options.filename || options.data, gcodeProcessorInstances, false);
+	}
+
+	/**
+	 * This function runs a "macro" that can be specified in a few different ways:
+	 *
+	 * - Javascript macros are .js files in the tightcnc macros directory.  These files should export a function that will be
+	 *   called with two arguments: tightcnc (this object), and params.  The function should return an array of GcodeLines
+	 *   to be pushed.
+	 * - An array of strings, where each string is a plain gcode line.  These strings can optionally contain substitutions in
+	 *   the form '{param}'.
+	 *
+	 * Correspondingly, the macro argument can be either a string or an array:
+	 * - A string, which is treated as a filename inside the macro directory, without the .js extension.  The js macro
+	 *   file should export a function.  That function is called with a 2 arguments: tightcnc (this object), and params.
+	 * - An array of strings, the "simple macro" style.
+	 *
+	 * @method macro
+	 * @param {String[]|String} macro - Either a macro filename, or an array of macro gcode instructions.
+	 * @param {Object} params - Params to send to the macro
+	 * @return {GcodeLine[]} - List of gcode lines to push
+	 */
+	macro(macro, params = {}) {
+		if (typeof macro === 'string') {
+			let filename = this.getFilename(macro, 'macro', false);
+			let fn = require(filename);
+			return fn(this, params);
+		} else if (Array.isArray(macro)) {
+			let ret = [];
+			for (let move of macro) {
+				for (let pkey in params) {
+					let prex = new RegExp('\\{' + pkey + '\\}', 'ig');
+					move = move.replace(prex, '' + params[pkey]);
+				}
+				ret.push(new GcodeLine(move));
+			}
+			return ret;
+		} else {
+			throw new XError(XError.INVALID_ARGUMENT, 'Invalid macro type');
+		}
 	}
 
 }

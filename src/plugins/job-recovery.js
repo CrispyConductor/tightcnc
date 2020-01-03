@@ -221,13 +221,12 @@ class JobRecoveryProcessor extends GcodeProcessor {
 		}
 	}
 
-	clearanceMoves(moves, params) {
-		for (let move of moves) {
-			for (let pkey in params) {
-				let prex = new RegExp('\\{' + pkey + '\\}', 'ig');
-				move = move.replace(prex, '' + params[pkey]);
+	clearanceMoves(macro, params) {
+		let r = this.tightcnc.macro(macro, params);
+		if (Array.isArray(r)) {
+			for (let el of r) {
+				this.pushGcode(el);
 			}
-			this.pushGcode(new GcodeLine(move));
 		}
 	}
 

@@ -29,7 +29,8 @@ module.exports = {
 	},
 	paths: {
 		data: 'data',
-		log: 'log'
+		log: 'log',
+		macro: 'macro'
 	},
 	dataDir: '/tmp/tightcnc-data',
 	operations: {
