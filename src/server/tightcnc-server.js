@@ -8,7 +8,6 @@ const zstreams = require('zstreams');
 const EventEmitter = require('events');
 const path = require('path');
 const fs = require('fs');
-const mkdirp = require('mkdirp');
 const JobManager = require('./job-manager');
 
 /**
