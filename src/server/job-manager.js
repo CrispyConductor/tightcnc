@@ -102,7 +102,7 @@ class JobManager {
 		// Set up the gcode processors for this job
 		let origJobOptions = jobOptions;
 		jobOptions = objtools.deepCopy(jobOptions);
-		jobOptions.filename = this.tightcnc.getFilename(jobOptions.filename, 'data');
+		jobOptions.filename = this.tightcnc.getFilename(jobOptions.filename, 'data', true);
 		if (jobOptions.rawFile) {
 			delete jobOptions.gcodeProcessors;
 		} else {
@@ -202,8 +202,8 @@ class JobManager {
 		this.tightcnc.debug('Begin dryRunJob');
 		let origJobOptions = jobOptions;
 		jobOptions = objtools.deepCopy(jobOptions);
-		jobOptions.filename = this.tightcnc.getFilename(jobOptions.filename, 'data');
-		if (outputFile) outputFile = this.tightcnc.getFilename(outputFile, 'data');
+		jobOptions.filename = this.tightcnc.getFilename(jobOptions.filename, 'data', true);
+		if (outputFile) outputFile = this.tightcnc.getFilename(outputFile, 'data', true);
 		if (jobOptions.rawFile) {
 			delete jobOptions.gcodeProcessors;
 		} else {
