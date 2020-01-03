@@ -2,6 +2,7 @@ module.exports = {
 	authKey: 'abc123',
 	serverPort: 2363,
 	host: 'http://localhost',
+	baseDir: '/tmp/tightcnc',
 	controller: 'TinyG',
 	controllers: {
 		TinyG: {
@@ -26,6 +27,10 @@ module.exports = {
 			maxUnackedRequests: 32
 		}
 	},
+	paths: {
+		data: 'data',
+		log: 'log'
+	},
 	dataDir: '/tmp/tightcnc-data',
 	operations: {
 		probeSurface: {
@@ -40,7 +45,6 @@ module.exports = {
 		}
 	},
 	logger: {
-		logDir: '/tmp/tightcnc-log',
 		maxFileSize: 1000000,
 		keepFiles: 2
 	},

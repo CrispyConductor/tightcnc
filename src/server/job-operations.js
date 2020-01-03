@@ -22,9 +22,8 @@ class OpStartJob extends Operation {
 		return jobOptionsSchema;
 	}
 	async run(params) {
-		let dir = this.tightcnc.config.dataDir;
 		let jobOptions = {
-			filename: this.tightcnc.validateDataFilename(params.filename, false),
+			filename: this.tightcnc.getFilename(params.filename, 'data'),
 			gcodeProcessors: params.gcodeProcessors,
 			rawFile: params.rawFile
 		};
@@ -39,13 +38,12 @@ class OpJobDryRun extends Operation {
 		});
 	}
 	async run(params) {
-		let dir = this.tightcnc.config.dataDir;
 		let jobOptions = {
-			filename: this.tightcnc.validateDataFilename(params.filename, false),
+			filename: this.tightcnc.getFilename(params.filename, 'data'),
 			gcodeProcessors: params.gcodeProcessors,
 			rawFile: params.rawFile
 		};
-		return await this.tightcnc.jobManager.dryRunJob(jobOptions, params.outputFilename ? this.tightcnc.validateDataFilename(params.outputFilename, false) : null);
+		return await this.tightcnc.jobManager.dryRunJob(jobOptions, params.outputFilename ? this.tightcnc.getFilename(params.outputFilename, 'data') : null);
 	}
 }
 

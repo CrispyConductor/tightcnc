@@ -4,8 +4,8 @@ const path = require('path');
 
 class LoggerDisk {
 
-	constructor(config = {}) {
-		this.logDir = config.logDir || '/tmp/tightcnc-log';
+	constructor(config = {}, tightcnc) {
+		this.logDir = tightcnc.getFilename(null, 'log', true, true, true);
 		this.maxFileSize = config.maxFileSize || 1000000;
 		this.keepFiles = config.keepFiles || 2;
 	}

@@ -284,8 +284,8 @@ class OpProbeSurface extends Operation {
 
 	async run(params) {
 		let options = objtools.deepCopy(params);
-		if (options.gcodeFilename) options.gcodeFilename = this.tightcnc.validateDataFilename(options.gcodeFilename, true);
-		if (options.surfaceMapFilename) options.surfaceMapFilename = this.tightcnc.validateDataFilename(options.surfaceMapFilename, true);
+		if (options.gcodeFilename) options.gcodeFilename = this.tightcnc.getFilename(options.gcodeFilename, 'data');
+		if (options.surfaceMapFilename) options.surfaceMapFilename = this.tightcnc.getFilename(options.surfaceMapFilename, 'data');
 		options.bounds = await this._getBounds(params);
 		startProbeSurface(this.tightcnc, options);
 		return surfaceProbeStatus;
@@ -363,7 +363,7 @@ class AutolevelGcodeProcessor extends GcodeProcessor {
 
 	_loadSurfaceMap() {
 		if (this.surfaceMap) return;
-		if (this.tightcnc) this.surfaceMapFilename = this.tightcnc.validateDataFilename(this.surfaceMapFilename, true);
+		if (this.tightcnc) this.surfaceMapFilename = this.tightcnc.getFilename(this.surfaceMapFilename, 'data');
 		return new Promise((resolve, reject) => {
 			fs.readFile(this.surfaceMapFilename, (err, data) => {
 				if (err) return reject(new XError('Error loading surface map', err));

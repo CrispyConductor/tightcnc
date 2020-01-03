@@ -7,6 +7,8 @@ const GcodeProcessor = require('../../lib/gcode-processor');
 const zstreams = require('zstreams');
 const EventEmitter = require('events');
 const path = require('path');
+const fs = require('fs');
+const mkdirp = require('mkdirp');
 const JobManager = require('./job-manager');
 
 /**
@@ -30,6 +32,7 @@ class TightCNCServer extends EventEmitter {
 			config = require('littleconf').getConfig();
 		}
 		this.config = config;
+		this.baseDir = this.config.baseDir;
 
 		this.controllerClasses = {};
 		this.controller = null;
@@ -67,15 +70,10 @@ class TightCNCServer extends EventEmitter {
 		const suppressDuplicateErrors = this.config.suppressDuplicateErrors === undefined ? true : this.config.suppressDuplicateErrors;
 
 		// Create data directory if it doesn't exist
-		await new Promise((resolve, reject) => {
-			mkdirp(this.config.dataDir, (err) => {
-				if (err) reject(err);
-				else resolve();
-			});
-		});
+		this.getFilename(null, 'data', true, true, true);
 
 		// Initialize the disk and in-memory communications loggers
-		this.loggerDisk = new LoggerDisk(this.config.logger);
+		this.loggerDisk = new LoggerDisk(this.config.logger, this);
 		await this.loggerDisk.init();
 		this.loggerMem = new LoggerMem(this.config.loggerMem || {});
 		this.loggerMem.log('other', 'Server started.');
@@ -130,11 +128,28 @@ class TightCNCServer extends EventEmitter {
 		}
 	}
 
-	validateDataFilename(filename, convertToAbsolute = false) {
-		if (path.isAbsolute(filename)) throw new XError(XError.INVALID_ARGUMENT, 'Only files in the data directory may be used');
-		if (filename.split(path.sep).indexOf('..') !== -1) throw new XError(XError.INVALID_ARGUMENT, 'Only files in the data directory may be used');
-		if (convertToAbsolute) return path.resolve(this.config.dataDir, filename);
-		return filename;
+	getFilename(name, place = null, allowAbsolute = false, createParentsIfMissing = false, createAsDirIfMissing = false) {
+		if (name && path.isAbsolute(name) && !allowAbsolute) throw new XError(XError.INVALID_ARGUMENT, 'Absolute paths not allowed');
+		if (name && name.split(path.sep).indexOf('..') !== -1 && !allowAbsolute) throw new XError(XError.INVALID_ARGUMENT, 'May not ascend directories');
+		let base = this.baseDir;
+		if (place) {
+			let placePath = this.config.paths[place];
+			if (!placePath) throw new XError(XError.INVALID_ARGUMENT, 'No such place ' + place);
+			base = path.resolve(base, placePath);
+		}
+		if (name) {
+			base = path.resolve(base, name);
+		}
+		let absPath = base;
+		if (createParentsIfMissing) {
+			mkdirp.sync(path.dirname(absPath));
+		}
+		if (createAsDirIfMissing) {
+			if (!fs.existsSync(absPath)) {
+				fs.mkdirSync(absPath);
+			}
+		}
+		return absPath;
 	}
 
 	registerController(name, cls) {
@@ -208,7 +223,7 @@ class TightCNCServer extends EventEmitter {
 		if (options.rawStrings) {
 			if (options.filename) {
 				let filename = options.filename;
-				if (!path.isAbsolute(filename)) filename = path.join(this.config.dataDir, filename);
+				filename = this.getFilename(filename, 'data', true);
 				return zstreams.fromFile(filename).pipe(new zstreams.SplitStream());
 			} else {
 				return zstreams.fromArray(options.data);

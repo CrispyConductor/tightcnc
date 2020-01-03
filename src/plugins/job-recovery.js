@@ -25,7 +25,7 @@ const path = require('path');
 const ListForm = require('../consoleui/list-form');
 
 const getRecoveryFilename = (tightcnc) => {
-	return path.resolve(tightcnc.config.dataDir, tightcnc.config.recoveryFile || '_recovery.json');
+	return tightcnc.getFilename('_recovery.json', 'data');
 };
 
 /**

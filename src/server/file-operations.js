@@ -6,10 +6,17 @@ const XError = require('xerror');
 
 class OpListFiles extends Operation {
 	getParamSchema() {
-		return {};
+		return {
+			dir: {
+				type: 'string',
+				required: true,
+				default: 'data',
+				description: 'Name of directory to list'
+			}
+		};
 	}
 	async run(params) {
-		let dir = this.tightcnc.config.dataDir;
+		let dir = this.tightcnc.getFilename(null, params.dir, false, true, true);
 		let files = await new Promise((resolve, reject) => {
 			fs.readdir(dir, (err, files) => {
 				if (err) reject(err);
@@ -69,7 +76,7 @@ class OpUploadFile extends Operation {
 		};
 	}
 	async run(params) {
-		let fullFilename = path.resolve(this.tightcnc.config.dataDir, params.filename);
+		let fullFilename = this.tightcnc.getFilename(params.filename, 'data', false, true);
 		await new Promise((resolve, reject) => {
 			fs.writeFile(fullFilename, params.data, (err) => {
 				if (err) reject(new XError(err));
