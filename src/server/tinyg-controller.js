@@ -57,6 +57,7 @@ class TinyGController extends Controller {
 		// - lineid - A generated absolute line ID that increments and does not reset.  This is not the same as a gcode line number.
 		// - gcode - If this is gcode, a GcodeLine instance representing this line.
 		// - goesToPlanner - A boolean value that indicates how many entries this is expected to take on the planner queue (round up to highest estimate)
+		// - responseExpected - If an ack is expected from the device
 		// Note that the sendQueue does not contain "front panel control" instructions like feed hold, as these are sent and processed immediately, and give no feedback.
 		this.sendQueue = [];
 		// This is the index into sendQueue of the next entry to send to the device.  Can be 1 past the end of the queue if there are no lines queued to be sent.
@@ -330,12 +331,18 @@ class TinyGController extends Controller {
 			if (this.sendImmediateCounter > 0) this.sendImmediateCounter--;
 		}
 		this._checkSynced();
+
+		// If the next entry queued to receive a response doesn't actually expect a response, generate a "fake" response for it
+		// Since _commsHandleAckResponseReceived() calls _checkSendLoop() after it's finished, this process continues for subsequent entries
+		if (this.sendQueueIdxToReceive < this.sendQueueIdxToSend && !this.sendQueue[this.sendQueueIdxToReceive].responseExpected) {
+			this._commsHandleAckResponseReceived({});
+		}
 	}
 
 	// Pushes a block of data onto the send queue.  The block is in the format of send queue entries.  This function cannot be used with
 	// front-panel controls (ie, feed hold).  Lineid is added.
 	_sendBlock(block, immediate = false) {
-		if (!block.str.trim()) return;
+		block.responseExpected = !!block.str.trim();
 
 		if (immediate) {
 			this._sendBlockImmediate(block);
@@ -349,7 +356,7 @@ class TinyGController extends Controller {
 
 	// Pushes a block onto the sendQueue such that it will be next to be sent, and force it to be sent immediately.
 	_sendBlockImmediate(block) {
-		if (!block.str.trim()) return;
+		block.responseExpected = !!block.str.trim();
 
 		// Need to insert the block immediately after the most recently sent block
 		// Determine the line id based on its position
