@@ -58,14 +58,15 @@ class JobManager {
 
 		// Return status
 		return {
-			state: job.state,
+			state: (job.waitList && job.waitList.length && job.state === 'running') ? 'waiting' : job.state,
 			jobOptions: job.jobOptions,
 			dryRunResults: job.dryRunResults,
 			startTime: job.startTime,
 			error: job.state === 'error' ? job.error.toString() : null,
 			gcodeProcessors: gcodeProcessorStatuses,
 			stats: stats,
-			progress: progress
+			progress: progress,
+			waits: job.waitList
 		};
 	}
 

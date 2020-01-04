@@ -552,6 +552,8 @@ class ConsoleUI extends EventEmitter {
 				this.jobStatusBox.data.state = '{blue-bg}INIT{/blue-bg}';
 			} else if (status.job.state === 'running') {
 				this.jobStatusBox.data.state = '{yellow-bg}RUN{/yellow-bg}';
+			} else if (status.job.state === 'waiting') {
+				this.jobStatusBox.data.state = '{blue-bg}WAIT{/blue-bg}';
 			} else if (status.job.state === 'complete') {
 				this.jobStatusBox.data.state = '{green-bg}DONE{/green-bg}';
 			} else {
