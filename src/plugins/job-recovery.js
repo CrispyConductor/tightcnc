@@ -158,66 +158,12 @@ class JobRecoveryProcessor extends GcodeProcessor {
 	}
 
 	syncMachineToVMState(vmState) {
-		// motion mode
-		if (vmState.motionMode) {
-			this.pushGcode(new GcodeLine(vmState.motionMode));
-		}
-
-		// feed rate
-		if (vmState.feed) {
-			this.pushGcode(new GcodeLine('F' + vmState.feed));
-		}
-
-		// arc plane
-		if (typeof vmState.arcPlane === 'number') {
-			if (vmState.arcPlane === 0) {
-				this.pushGcode(new GcodeLine('G17'));
-			} else if (vmState.arcPlane === 1) {
-				this.pushGcode(new GcodeLine('G18'));
-			} else if (vmState.arcPlane === 2) {
-				this.pushGcode(new GcodeLine('G19'));
-			}
-		}
-
-		// incremental mode
-		if (vmState.incremental) {
-			this.pushGcode(new GcodeLine('G91'));
-		} else {
-			this.pushGcode(new GcodeLine('G90'));
-		}
-
-		// feed rate mode
-		if (vmState.inverseFeed) {
-			this.pushGcode(new GcodeLine('G93'));
-		} else {
-			this.pushGcode(new GcodeLine('G94'));
-		}
-
-		// units
-		if (vmState.units === 'in') {
-			this.pushGcode(new GcodeLine('G20'));
-		} else if (vmState.units === 'mm') {
-			this.pushGcode(new GcodeLine('G21'));
-		}
-
-		// spindle
-		if (vmState.spindle) {
-			let word = (vmState.spindleDirection === -1) ? 'M4' : 'M3';
-			let sword = vmState.spindleSpeed ? (' S' + vmState.spindleSpeed) : '';
-			this.pushGcode(new GcodeLine(word + sword));
-		} else {
-			this.pushGcode(new GcodeLine('M5'));
-		}
-
-		// coolant
-		if (vmState.coolant === 1 || vmState.coolant === 3) {
-			this.pushGcode(new GcodeLine('M7'));
-		}
-		if (vmState.coolant === 2 || vmState.coolant === 3) {
-			this.pushGcode(new GcodeLine('M8'));
-		}
-		if (!vmState.coolant) {
-			this.pushGcode(new GcodeLine('M9'));
+		let lines = this.vm.syncMachineToState({
+			vmState: vmState,
+			include: [ 'motionMode', 'feed', 'arcPlane', 'incremental', 'inverseFeed', 'units', 'spindle', 'coolant' ]
+		});
+		for (let line of lines) {
+			this.pushGcode(line);
 		}
 	}
 

@@ -303,6 +303,20 @@ class TightCNCServer extends EventEmitter {
 		}
 	}
 
+	/**
+	 * This runs a macro that may or may not be asynchronous, and executes any returned lines on the controller.
+	 */
+	async runMacro(macro, params = {}, waitSync = true) {
+		if (waitSync) await this.controller.waitSync();
+		let results = await this.macro(macro, params);
+		if (Array.isArray(results)) {
+			for (let line of results) {
+				this.controller.send(line);
+			}
+		}
+		if (waitSync) await this.controller.waitSync();
+	}
+
 }
 
 module.exports = TightCNCServer;

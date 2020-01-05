@@ -65,6 +65,17 @@ module.exports = {
 			'G1 Z{z}'
 		]
 	},
+	toolChange: {
+		preToolChange: [
+			'G53 G0 Z0',
+			'G53 G0 X0 Y0'
+		],
+		postToolChange: [
+			'G53 G0 Z0',
+			'G0 X{x} Y{y}',
+			'G1 Z{z}'
+		]
+	},
 	enableDebug: false,
 	consoleui: {
 		logDir: '/tmp/tightcnc-log',

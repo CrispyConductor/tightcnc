@@ -1,4 +1,4 @@
-const pluginList = [ './autolevel', './move-splitter', './job-recovery' ];
+const pluginList = [ './autolevel', './move-splitter', './job-recovery', './tool-change' ];
 
 const plugins = pluginList.map((reqName) => require(reqName));
 
