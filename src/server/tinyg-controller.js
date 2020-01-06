@@ -1254,8 +1254,10 @@ class TinyGController extends Controller {
 
 	reset() {
 		if (this.serial) {
+			this.debug('reset() called with serial; sending Ctrl-X');
 			this.sendLine('\x18');
 		} else {
+			this.debug('reset() called without serial; setting resetOnConnect flag');
 			this.resetOnConnect = true;
 		}
 	}
