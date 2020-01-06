@@ -11,6 +11,7 @@ class Macros {
 	}
 
 	_prepMacroParam(value, key, env) {
+		let axisLabels = this.tightcnc.controller.axisLabels;
 		// allow things that look like coordinate arrays to be accessed by their axis letters
 		if (Array.isArray(value) && (value.length <= axisLabels.length || value.length < 6)) {
 			let axisLabels = this.tightcnc.controller.axisLabels;
