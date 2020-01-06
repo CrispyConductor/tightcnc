@@ -112,6 +112,7 @@ class TinyGController extends Controller {
 		// Call the error hook on anything in sendQueue
 		for (let entry of this.sendQueue) {
 			if (entry.hooks) {
+				this.debug('_commsReset triggering error hook on sendQueue entry');
 				entry.hooks.triggerSync('error', err);
 			}
 		}
@@ -799,17 +800,22 @@ class TinyGController extends Controller {
 			this.errorData = err;
 		}
 		this.ready = false;
+		this.debug('close() calling _cancelRunningOps()');
 		this._cancelRunningOps(err || new XError(XError.CANCELLED, 'Operations cancelled due to close'));
 		if (this.serial) {
+			this.debug('close() removing listeners from serial');
 			for (let key in this._serialListeners) {
 				this.serial.removeListener(key, this._serialListeners[key]);
 			}
 			this._serialListeners = [];
 			this.serial.on('error', () => {}); // swallow errors on this port that we're discarding
+			this.debug('close() Trying to close serial');
 			try { this.serial.close(); } catch (err2) {}
+			this.debug('close() done closing serial');
 			delete this.serial;
 		}
 		this.emit('statusUpdate');
+		this.debug('close() complete');
 	}
 
 	_retryConnect() {
@@ -1232,9 +1238,13 @@ class TinyGController extends Controller {
 	}
 
 	_cancelRunningOps(err) {
+		this.debug('_cancelRunningOps()');
 		this._commsReset(err);
+		this.debug('_cancelRunningOps() calling _checkSynced()');
 		this._checkSynced();
+		this.debug('_cancelRunningOps() emitting cancelRunningOpe');
 		this.emit('cancelRunningOps', err);
+		this.debug('_cancelRunningOps() done');
 	}
 
 	hold() {
