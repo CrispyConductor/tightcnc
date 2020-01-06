@@ -84,7 +84,7 @@ class Macros {
 		};
 		for (let key in params) {
 			if (!(key in env)) {
-				let value = this._prepMacroParam(params[key]);
+				let value = this._prepMacroParam(params[key], key, env);
 				params[key] = value;
 				env[key] = value;
 			}
