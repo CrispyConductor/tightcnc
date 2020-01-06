@@ -90,8 +90,8 @@ class TinyGController extends Controller {
 		this._disableSending = false; // flag to disable sending data using normal channels (_sendImmediate still works)
 		this._disableResponseErrorEvent = false; // flag to disable error events in cases where errors are expected
 		this.currentStatusReport = {};
-		this.plannerQueueSize = 0; // Total size of planner queue
-		this.plannerQueueFree = 0; // Number of buffers in the tinyg planner queue currently open
+		this.plannerQueueSize = 28; // Total size of planner queue
+		this.plannerQueueFree = 28; // Number of buffers in the tinyg planner queue currently open
 
 		this.realTimeMovesTimeStart = [ 0, 0, 0, 0, 0, 0 ];
 		this.realTimeMovesCounter = [ 0, 0, 0, 0, 0, 0 ];
@@ -267,6 +267,7 @@ class TinyGController extends Controller {
 		// Shift even more if qi/qo have gotten desynced from the actual planner queue fill
 		this.debug('handle possible planner queue desync');
 		let plannerQueueFill = this.plannerQueueSize - qr;
+		if (plannerQueueFill < 0) plannerQueueFill = 0;
 		while (this.plannerMirror.length > plannerQueueFill) {
 			this._commsShiftPlannerMirror();
 		}
