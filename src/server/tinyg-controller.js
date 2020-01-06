@@ -86,7 +86,7 @@ class TinyGController extends Controller {
 		this.homableAxes = config.homableAxes || [ true, true, true ];
 		this.axisMaxFeeds = [ 500, 500, 500, 500, 500, 500 ]; // initial values, set later during initialization
 
-		this._waitingForSync = false; // disable sending additional commands while waiting for synchronization
+		this._waitingForSync = false;
 		this._disableSending = false; // flag to disable sending data using normal channels (_sendImmediate still works)
 		this._disableResponseErrorEvent = false; // flag to disable error events in cases where errors are expected
 		this.currentStatusReport = {};
@@ -295,7 +295,7 @@ class TinyGController extends Controller {
 
 	// Checks the send queue to see if there's anything more that can be sent to the device.  Returns true if it can.
 	_checkSendToDevice() {
-		if (this._waitingForSync || this._disableSending) return false; // don't send anything more until state has synchronized
+		if (this._disableSending) return false; // don't send anything more until state has synchronized
 		// Don't send more if we haven't received responses for more than a threshold number
 		const maxUnackedRequests = this.config.maxUnackedRequests || 32;
 		let numUnackedRequests = this.sendQueueIdxToSend - this.sendQueueIdxToReceive;
