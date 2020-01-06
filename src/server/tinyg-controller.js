@@ -116,6 +116,7 @@ class TinyGController extends Controller {
 				entry.hooks.triggerSync('error', err);
 			}
 		}
+		this.debug('_commsReset() done triggering error hooks');
 		// Reset all the variables
 		this.sendQueue = [];
 		this.sendQueueIdxToSend = 0;
@@ -916,6 +917,7 @@ class TinyGController extends Controller {
 				this.debug('calling _retryConnect() after receive SYSTEM READY');
 				this._retryConnect();
 			}
+			this.debug('Done handling SYSTEM READY in _handleReceiveSerialDataLine()');
 			return;
 		}
 
