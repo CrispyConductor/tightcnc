@@ -11,6 +11,7 @@ const path = require('path');
 const fs = require('fs');
 const JobManager = require('./job-manager');
 const stable = require('stable');
+const Macros = require('./macros');
 
 /**
  * This is the central class for the application server.  Operations, gcode processors, and controllers
@@ -34,6 +35,8 @@ class TightCNCServer extends EventEmitter {
 		}
 		this.config = config;
 		this.baseDir = this.config.baseDir;
+
+		this.macros = new Macros(this);
 
 		this.controllerClasses = {};
 		this.controller = null;
@@ -264,57 +267,8 @@ class TightCNCServer extends EventEmitter {
 		return GcodeProcessor.buildProcessorChain(options.filename || options.data, gcodeProcessorInstances, false);
 	}
 
-	/**
-	 * This function runs a "macro" that can be specified in a few different ways:
-	 *
-	 * - Javascript macros are .js files in the tightcnc macros directory.  These files should export a function that will be
-	 *   called with two arguments: tightcnc (this object), and params.  The function should return an array of GcodeLines
-	 *   to be pushed.
-	 * - An array of strings, where each string is a plain gcode line.  These strings can optionally contain substitutions in
-	 *   the form '{param}'.
-	 *
-	 * Correspondingly, the macro argument can be either a string or an array:
-	 * - A string, which is treated as a filename inside the macro directory, without the .js extension.  The js macro
-	 *   file should export a function.  That function is called with a 2 arguments: tightcnc (this object), and params.
-	 * - An array of strings, the "simple macro" style.
-	 *
-	 * @method macro
-	 * @param {String[]|String} macro - Either a macro filename, or an array of macro gcode instructions.
-	 * @param {Object} params - Params to send to the macro
-	 * @return {GcodeLine[]} - List of gcode lines to push
-	 */
-	macro(macro, params = {}) {
-		if (typeof macro === 'string') {
-			let filename = this.getFilename(macro, 'macro', false);
-			let fn = require(filename);
-			return fn(this, params);
-		} else if (Array.isArray(macro)) {
-			let ret = [];
-			for (let move of macro) {
-				for (let pkey in params) {
-					let prex = new RegExp('\\{' + pkey + '\\}', 'ig');
-					move = move.replace(prex, '' + params[pkey]);
-				}
-				ret.push(new GcodeLine(move));
-			}
-			return ret;
-		} else {
-			throw new XError(XError.INVALID_ARGUMENT, 'Invalid macro type');
-		}
-	}
-
-	/**
-	 * This runs a macro that may or may not be asynchronous, and executes any returned lines on the controller.
-	 */
-	async runMacro(macro, params = {}, waitSync = true) {
-		if (waitSync) await this.controller.waitSync();
-		let results = await this.macro(macro, params);
-		if (Array.isArray(results)) {
-			for (let line of results) {
-				this.controller.send(line);
-			}
-		}
-		if (waitSync) await this.controller.waitSync();
+	async runMacro(macro, params = {}, options = {}) {
+		return await this.macros.runMacro(macro, params, options);
 	}
 
 }

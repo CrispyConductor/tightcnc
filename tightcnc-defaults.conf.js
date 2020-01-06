@@ -58,11 +58,11 @@ module.exports = {
 		// The values {x}, {y}, etc. are replaced with the coordinates of the position (touching the workpiece) to resume the job.
 		moveToClearance: [
 			'G53 G0 Z0',
-			'G0 X{x} Y{y}'
+			'G0 X${x} Y${y}'
 		],
 		// List of gcode lines to execute to move from the clearance position to the position to restart the job.
 		moveToWorkpiece: [
-			'G1 Z{z}'
+			'G1 Z${z}'
 		]
 	},
 	toolChange: {
@@ -72,8 +72,8 @@ module.exports = {
 		],
 		postToolChange: [
 			'G53 G0 Z0',
-			'G0 X{x} Y{y}',
-			'G1 Z{z}'
+			'G0 X${x} Y${y}',
+			'G1 Z${z}'
 		]
 	},
 	enableDebug: false,

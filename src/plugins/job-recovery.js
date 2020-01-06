@@ -167,16 +167,11 @@ class JobRecoveryProcessor extends GcodeProcessor {
 		}
 	}
 
-	clearanceMoves(macro, params) {
-		let r = this.tightcnc.macro(macro, params);
-		if (Array.isArray(r)) {
-			for (let el of r) {
-				this.pushGcode(el);
-			}
-		}
+	async clearanceMoves(macro, params) {
+		await this.tightcnc.runMacro(macro, params, { gcodeProcessor: this, waitSync: true });
 	}
 
-	beginRecovery() {
+	async beginRecovery() {
 		let preRecoveryVMState = this.recoveryLineBuffer[0].vmStateBefore;
 		let moveParams = {};
 		for (let axisNum = 0; axisNum < preRecoveryVMState.pos.length; axisNum++) {
@@ -186,7 +181,7 @@ class JobRecoveryProcessor extends GcodeProcessor {
 		}
 
 		// Move to clearance position, "above" workpiece
-		this.clearanceMoves(this.clearanceParams.moveToClearance, moveParams);
+		await this.clearanceMoves(this.clearanceParams.moveToClearance, { pos: preRecoveryVMState.pos });
 
 		// Synchronize machine to pre recovery VM state
 		this.syncMachineToVMState(preRecoveryVMState);
@@ -197,7 +192,7 @@ class JobRecoveryProcessor extends GcodeProcessor {
 		}
 
 		// Move to starting position
-		this.clearanceMoves(this.clearanceParams.moveToWorkpiece, moveParams);
+		await this.clearanceMoves(this.clearanceParams.moveToWorkpiece, { pos: preRecoveryVMState.pos });
 
 		// Push all the lines in the rotating buffer
 		while (this.recoveryLineBuffer.length) {
@@ -208,7 +203,7 @@ class JobRecoveryProcessor extends GcodeProcessor {
 		this.startedPassThrough = true;
 	}
 
-	processGcode(gline) {
+	async processGcode(gline) {
 		if (this.startedPassThrough) return gline;
 		let vmStateBefore = objtools.deepCopy(this.vm.getState());
 		this.vm.runGcodeLine(gline);
@@ -238,7 +233,7 @@ class JobRecoveryProcessor extends GcodeProcessor {
 					vmStateBefore: vmStateBefore
 				});
 			}
-			this.beginRecovery();
+			await this.beginRecovery();
 		} else {
 			// Blackhole the gline by calling all the hooks on it
 			gline.triggerSync('queued');

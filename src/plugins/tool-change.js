@@ -34,9 +34,15 @@ class ToolChangeProcessor extends GcodeProcessor {
 		this.programStopWaiter.resolve();
 	}
 
+	pushGcode(gline) {
+		if (typeof gline === 'string') gline = new GcodeLine(gline);
+		super.pushGcode(gline);
+		this.vm.runGcodeLine(gline);
+	}
+
 	async _doToolChange() {
 		// create a map from axis letters to current position in job
-		let vmState = this.vm.getState();
+		let vmState = objtools.deepCopy(this.vm.getState());
 		let controller = this.tightcnc.controller;
 		let posMap = {};
 		for (let axisNum = 0; axisNum < vmState.pos.length; axisNum++) {
@@ -47,34 +53,45 @@ class ToolChangeProcessor extends GcodeProcessor {
 		let changedMachineProp = false;
 		if (controller.spindle) {
 			changedMachineProp = true;
-			controller.send('M5');
+			this.pushGcode('M5');
 		}
 		if (controller.coolant) {
 			changedMachineProp = true;
-			controller.send('M9');
+			this.pushGcode('M9');
 		}
+		let origFeed = controller.feed;
 		if (changedMachineProp) await controller.waitSync();
 
 		// Run pre-toolchange macro
 		let preToolChange = this.tightcnc.config.toolChange.preToolChange;
-		await this.tightcnc.runMacro(preToolChange, posMap);
+		await this.tightcnc.runMacro(preToolChange, { pos: vmState.pos }, { gcodeProcessor: this, waitSync: true });
 
 		// Wait for resume
 		await this._doProgramStop('tool_change');
 
 		// Run post-toolchange macro
 		let postToolChange = this.tightcnc.config.toolChange.postToolChange;
-		await this.tightcnc.runMacro(postToolChange, posMap);
+		await this.tightcnc.runMacro(postToolChange, { pos: vmState.pos }, { gcodeProcessor: this, waitSync: true });
 
 		// Restart spindle/coolant
 		if (changedMachineProp) {
 			let lines = this.vm.syncMachineToState({ vmState: vmState, include: [ 'spindle', 'coolant' ] });
-			for (let line of lines) controller.send(line);
+			for (let line of lines) this.pushGcode(line);
 			await controller.waitSync();
 		}
+		if (origFeed) this.pushGcode('F' + origFeed);
 
 		// Add dwell corresponding to longest seen in job
-		if (this.maxDwell) controller.send('G4 P' + this.maxDwell);
+		if (this.maxDwell) this.pushGcode('G4 P' + this.maxDwell);
+
+		// Move to position to restart job
+		let moveBackGcode = (vmState.motionMode || 'G0');
+		for (let axisNum = 0; axisNum < vmState.pos.length; axisNum++) {
+			if (vmState.hasMovedToAxes(axisNum)) {
+				moveBackGcode += ' ' + vmState.axisLabels[axisNum].toUpperCase() + vmState.pos[axisNum];
+			}
+		}
+		this.pushGcode(moveBackGcode);
 	}
 
 	async _doProgramStop(waitname = 'program_stop') {
@@ -126,7 +143,6 @@ class ToolChangeProcessor extends GcodeProcessor {
 					bufLine.hookSync('executed', () => resolve());
 					bufLine.hookSync('error', (err) => reject(err));
 					this.pushGcode(bufLine);
-					this.vm.runGcodeLine(bufLine);
 					this.bufferedGcode = null;
 				});
 			}
@@ -145,7 +161,6 @@ class ToolChangeProcessor extends GcodeProcessor {
 			// This is not a line triggering a tool change.  Push out the buffered gcode line and store this one.
 			if (this.bufferedGcode) {
 				this.pushGcode(this.bufferedGcode);
-				this.vm.runGcodeLine(this.bufferedGcode);
 			}
 			this.bufferedGcode = gline;
 		}
@@ -156,7 +171,6 @@ class ToolChangeProcessor extends GcodeProcessor {
 	flushGcode() {
 		if (this.bufferedGcode) {
 			this.pushGcode(this.bufferedGcode);
-			this.vm.runGcodeLine(bufLine);
 			this.bufferedGcode = null;
 		}
 	}
