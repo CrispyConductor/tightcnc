@@ -129,6 +129,9 @@ class TightCNCServer extends EventEmitter {
 
 	debug(str) {
 		if (!this.config.enableDebug) return;
+		if (this.config.debugToStdout) {
+			console.log('Debug: ' + str);
+		}
 		if (this.loggerDisk) {
 			this.loggerDisk.log('other', 'Debug: ' + str);
 		}

@@ -80,6 +80,7 @@ module.exports = {
 		negateToolOffset: false
 	},
 	enableDebug: false,
+	debugToStdout: false,
 	consoleui: {
 		logDir: '/tmp/tightcnc-log',
 		log: {
