@@ -20,6 +20,9 @@ class ToolChangeProcessor extends GcodeProcessor {
 		this.handleProgramStop = ('handleProgramStop' in options) ? options.handleProgramStop : true;
 		this.programStopWaiter = null;
 		this.maxDwell = 0;
+		this.currentToolOffset = 0;
+		this.toolOffsetAxis = this.tightcnc.config.toolChange.toolOffsetAxis;
+		this.toolOffsetAxisLetter = this.tightcnc.controller.axisLabels[this.toolOffsetAxis];
 	}
 
 	getStatus() {
@@ -36,18 +39,19 @@ class ToolChangeProcessor extends GcodeProcessor {
 
 	pushGcode(gline) {
 		if (typeof gline === 'string') gline = new GcodeLine(gline);
+		if (this.currentToolOffset && gline.has(this.toolOffsetAxisLetter)) {
+			gline.set(this.toolOffsetAxisLetter, gline.get(this.toolOffsetAxisLetter) + this.currentToolOffset * (this.tightcnc.config.toolChange.negateToolOffset ? -1 : 1));
+			gline.addComment('to'); // to=tool offset
+		}
 		super.pushGcode(gline);
 		this.vm.runGcodeLine(gline);
+		if (this.vm.getState().incremental) throw new XError(XError.INTERNAL_ERROR, 'Incremental mode not supported with tool change');
 	}
 
 	async _doToolChange() {
 		// create a map from axis letters to current position in job
 		let vmState = objtools.deepCopy(this.vm.getState());
 		let controller = this.tightcnc.controller;
-		let posMap = {};
-		for (let axisNum = 0; axisNum < vmState.pos.length; axisNum++) {
-			posMap[controller.axisLabels[axisNum]] = vmState.pos[axisNum];
-		}
 
 		// If spindle/coolant on, turn them off
 		let changedMachineProp = false;

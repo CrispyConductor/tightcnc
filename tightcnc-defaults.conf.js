@@ -74,7 +74,10 @@ module.exports = {
 			'G53 G0 Z0',
 			'G0 X${x} Y${y}',
 			'G1 Z${z}'
-		]
+		],
+		// Which axis number tool offsets apply to (in standard config, Z=2)
+		toolOffsetAxis: 2,
+		negateToolOffset: false
 	},
 	enableDebug: false,
 	consoleui: {
