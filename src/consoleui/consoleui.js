@@ -672,6 +672,7 @@ class ConsoleUI extends EventEmitter {
 			await fn();
 			let t2 = new Date().getTime();
 			let tDiff = t2 - t1;
+			if (tDiff > 15000) tDiff = 15000; // in case something funky happens with the time, such as the computer goes on standby
 			let waitTime = Math.max(minInterval, tDiff);
 			await pasync.setTimeout(waitTime);
 		}
