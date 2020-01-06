@@ -616,7 +616,7 @@ class TinyGController extends Controller {
 	}
 
 	_handleSendImmediateCommand(str) {
-		this._writeToSerial(str);
+		this._writeToSerial('\n' + str + '\n');
 		str = str.trim();
 		this.emit('sent', str);
 		if (str === '!') {
