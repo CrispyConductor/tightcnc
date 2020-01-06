@@ -91,7 +91,7 @@ class Macros {
 		return env;
 	}
 
-	async runJS(code, params = {}, options + {}) {
+	async runJS(code, params = {}, options = {}) {
 		if (options.waitSync) code += '\n;sync();';
 		let env = this._makeMacroEnv(params, options);
 		let envKeys = Object.keys(env);
