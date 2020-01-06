@@ -128,6 +128,7 @@ class TinyGController extends Controller {
 
 	// Calls executing hooks corresponding to front entry in planner mirror
 	_commsCallExecutingHooks(minLineId = -1) {
+		this.debug('_commsCallExecutingHooks() ' + minLineId);
 		let lineidRange = this.plannerMirror[0];
 		if (lineidRange) {
 			let topLineId = lineidRange[1]; // max line id inclusive
@@ -147,6 +148,7 @@ class TinyGController extends Controller {
 	// Removes everything in plannerMirror, resolving all the hooks for entries in it
 	// Used in (apparently frequent) cases of desyncs
 	_commsSyncPlannerMirror() {
+		this.debug('_commsSyncPlannerMirror()');
 		// shift everything off the planner queue
 		while (this.plannerMirror.length > 0) {
 			this._commsShiftPlannerMirror();
@@ -161,6 +163,7 @@ class TinyGController extends Controller {
 
 	// Marks the front entry of the planner queue as executed and shifts it off the queue
 	_commsShiftPlannerMirror() {
+		this.debug('_commsShiftPlannerMirror()');
 		// Shift off the front entry of the planner queue, and handle each line id range
 		let lineidRange = this.plannerMirror.shift();
 		if (lineidRange) {
@@ -187,11 +190,13 @@ class TinyGController extends Controller {
 
 	// Communications-related code for when a queue report is received from the device
 	_commsHandleQueueReportReceived(queueReport) {
+		this.debug('_commsHandleQueueReportReceived()');
 		let { qr, qi, qo } = queueReport;
 		// --- HANDLE qi ---
 		// For each entry pushed onto the planner since the last report, push onto the mirror planner.
 		// Each of these entries should correspond to 0 or more gcode line IDs.
 		// The range of gcode lines in the queue that correspond to this range of qi is sendQueueIdxToRecvAtLastQr (inclusive) to sendQueueIdxToReceive (exclusive)
+		this.debug('qi pushes');
 		let sendQueueIdxRangeStart = this.sendQueueIdxToRecvAtLastQr;
 		let sendQueueIdxRangeEnd = this.sendQueueIdxToReceive;
 		for (let qiCtr = 0; qiCtr < qi; qiCtr++) {
@@ -215,6 +220,7 @@ class TinyGController extends Controller {
 		// by the above code.
 		let shiftPlannerMirrorExtra = 0;
 		if (qi < 1 && sendQueueIdxRangeEnd > sendQueueIdxRangeStart) {
+			this.debug('handle extra responses');
 			let lineIdStart = this.sendQueue[sendQueueIdxRangeStart].lineid;
 			let lineIdEnd = this.sendQueue[sendQueueIdxRangeEnd - 1].lineid;
 			if (this.plannerMirror.length > 1) {
@@ -246,6 +252,7 @@ class TinyGController extends Controller {
 		// - Run the executed hook for any gcode line ids corresponding to that entry at the front of sendQueue; and shift off each of those gcode entries
 		// - Shift it off our planner queue mirror
 		// - Update the various indexes into sendQueue
+		this.debug('qo shifts');
 		let plannerEntriesToShift = qo + shiftPlannerMirrorExtra;
 		// Make sure we're not shifting off more than the total size of our planner queue
 		if (plannerEntriesToShift > this.plannerMirror.length) plannerEntriesToShift = this.plannerMirror.length;
@@ -254,6 +261,7 @@ class TinyGController extends Controller {
 			plannerEntriesToShift--;
 		}
 		// Shift even more if qi/qo have gotten desynced from the actual planner queue fill
+		this.debug('handle possible planner queue desync');
 		let plannerQueueFill = this.plannerQueueSize - qr;
 		while (this.plannerMirror.length > plannerQueueFill) {
 			this._commsShiftPlannerMirror();
@@ -270,6 +278,7 @@ class TinyGController extends Controller {
 	// Communications-related code for when a {r:...} response is received from the device
 	// Should be called with the full response line (ie, it should contain a property 'r')
 	_commsHandleAckResponseReceived(r) {
+		this.debug('_commsHandleAckResponseReceived()');
 		// Make sure we're actually expecting a response.  If not, assume it's a bug (like with probing) and just
 		// ignore the response.
 		if (this.sendQueueIdxToSend <= this.sendQueueIdxToReceive) return;
@@ -329,7 +338,9 @@ class TinyGController extends Controller {
 	}
 
 	_checkSendLoop() {
+		this.debug('_checkSendLoop()');
 		while ((this.sendImmediateCounter > 0 || this._checkSendToDevice()) && this.sendQueueIdxToSend < this.sendQueue.length) {
+			this.debug('_checkSendLoop() iteration');
 			let entry = this.sendQueue[this.sendQueueIdxToSend];
 			this._writeToSerial(entry.str + '\n');
 			if (entry.hooks) {
@@ -339,11 +350,13 @@ class TinyGController extends Controller {
 			this.sendQueueIdxToSend++;
 			if (this.sendImmediateCounter > 0) this.sendImmediateCounter--;
 		}
+		this.debug('_checkSendLoop() call _checkSynced');
 		this._checkSynced();
 
 		// If the next entry queued to receive a response doesn't actually expect a response, generate a "fake" response for it
 		// Since _commsHandleAckResponseReceived() calls _checkSendLoop() after it's finished, this process continues for subsequent entries
 		if (this.sendQueueIdxToReceive < this.sendQueueIdxToSend && !this.sendQueue[this.sendQueueIdxToReceive].responseExpected) {
+			this.debug('_checkSendLoop() call _commsHandleAckResponseReceived');
 			this._commsHandleAckResponseReceived({});
 		}
 	}
@@ -351,6 +364,7 @@ class TinyGController extends Controller {
 	// Pushes a block of data onto the send queue.  The block is in the format of send queue entries.  This function cannot be used with
 	// front-panel controls (ie, feed hold).  Lineid is added.
 	_sendBlock(block, immediate = false) {
+		this.debug('_sendBlock() ' + block.str);
 		block.responseExpected = !!block.str.trim();
 
 		if (immediate) {
@@ -365,6 +379,7 @@ class TinyGController extends Controller {
 
 	// Pushes a block onto the sendQueue such that it will be next to be sent, and force it to be sent immediately.
 	_sendBlockImmediate(block) {
+		this.debug('_sendBlockImmediate() ' + block.str);
 		block.responseExpected = !!block.str.trim();
 
 		// Need to insert the block immediately after the most recently sent block
@@ -843,6 +858,7 @@ class TinyGController extends Controller {
 
 	// Check to see if the machine state is synchronized to local state, and the machine stopped.
 	_checkSynced() {
+		this.debug('_checkSynced()');
 		// The machine is considered to be synced when all of:
 		// 1. The machine is stopped (the last status report indicated a machine status of such)
 		// 2. There are no sent lines for which responses have not been received.
@@ -852,6 +868,7 @@ class TinyGController extends Controller {
 			this.sendQueueIdxToReceive >= this.sendQueueIdxToSend &&
 			(this.sendQueueIdxToSend >= this.sendQueue.length || this._disableSending);
 		if (nowSynced !== wasSynced) {
+			this.debug('Is now synced');
 			if (nowSynced) {
 				// Extra check to automatically call hooks on all gcode blocks in the planner when the machine stops
 				this._commsSyncPlannerMirror();
@@ -904,6 +921,7 @@ class TinyGController extends Controller {
 	}
 
 	_handleReceiveSerialDataLine(line) {
+		this.debug('receive line ' + line);
 		this.emit('received', line);
 		if (line[0] != '{') throw new XError(XError.PARSE_ERROR, 'Errror parsing received serial line', { data: line });
 		let data = AbbrJSON.parse(line);
