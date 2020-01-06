@@ -93,7 +93,7 @@ class Macros {
 	}
 
 	async runJS(code, params = {}, options = {}) {
-		if (options.waitSync) code += '\n;sync();';
+		if (options.waitSync) code += '\n;await sync();';
 		let env = this._makeMacroEnv(params, options);
 		let envKeys = Object.keys(env);
 		let fnCtorArgs = envKeys.concat([ code ]);
