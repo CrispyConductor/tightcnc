@@ -793,6 +793,11 @@ class TinyGController extends Controller {
 			};
 			for (let eventName in this._serialListeners) this.serial.on(eventName, this._serialListeners[eventName]);
 
+			// This handles the case that the app might have been killed with a partially sent serial buffer.  Send a newline
+			// to "flush" it, then wait a short period of time for any possible response to be received (and ignored).
+			this._writeToSerial('\n');
+			await pasync.setTimeout(500);
+
 			// Initialize all the machine state properties
 			await this._initMachine();
 
