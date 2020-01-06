@@ -89,6 +89,7 @@ class TightCNCServer extends EventEmitter {
 			let controllerClass = this.controllerClasses[this.config.controller];
 			let controllerConfig = this.config.controllers[this.config.controller];
 			this.controller = new controllerClass(controllerConfig);
+			this.controller.tightcnc = this;
 			let lastError = null; // used to suppress duplicate error messages on repeated connection retries
 			this.controller.on('error', (err) => {
 				let errrep = JSON.stringify(err.toObject ? err.toObject() : err.toString) + err;

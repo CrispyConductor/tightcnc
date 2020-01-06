@@ -99,8 +99,15 @@ class TinyGController extends Controller {
 		this._serialListeners = {}; // mapping from serial port event names to listener functions; used to remove listeners during cleanup
 	}
 
+	debug(str) {
+		const enableDebug = false;
+		if (this.tightcnc) this.tightcnc.debug('TinyG: ' + str);
+		else if (enableDebug) console.log('Debug: ' + str);
+	}
+
 	// Resets all the communications-related state variables, and errors out any in-flight requests
 	_commsReset(err = null) {
+		this.debug('_commsReset()');
 		if (!err) err = new XError(XError.INTERNAL_ERROR, 'Communications reset');
 		// Call the error hook on anything in sendQueue
 		for (let entry of this.sendQueue) {
@@ -598,7 +605,8 @@ class TinyGController extends Controller {
 	}
 
 	// Temporarily disable sending anything to the machine for a period of time to wait for it to catch up or something
-	_tempDisableSending(time = 1500) {
+	_tempDisableSending(time = 3500) {
+		this.debug('_tempDisableSending')
 		let origDisableSending = this._disableSending;
 		this._disableSending = true;
 		setTimeout(() => {
@@ -621,6 +629,7 @@ class TinyGController extends Controller {
 			// I've found that things sent very shortly after a % can somehow get "lost".  So wait a while before sending anything more.
 			this._tempDisableSending();
 		} else if (str === '\x18') {
+			this.debug('Handling Ctrl-X send -> _cancelRunningOps');
 			this._cancelRunningOps(new XError(XError.CANCELLED, 'Machine reset'));
 			this.ready = false; // will be set back to true once SYSTEM READY message received
 			this._tempDisableSending();
@@ -647,7 +656,11 @@ class TinyGController extends Controller {
 	}
 
 	initConnection(retry = true) {
-		if (this._initializing) return;
+		this.debug('initConnection()');
+		if (this._initializing) {
+			this.debug('skipping, already initializing');
+			return;
+		}
 		this._retryConnectFlag = retry;
 		this.ready = false;
 		this._initializing = true;
@@ -674,33 +687,40 @@ class TinyGController extends Controller {
 			let port = this.config.port || '/dev/ttyUSB0';
 
 			// Try to open the serial port
+			this.debug('Opening serial port');
 			await new Promise((resolve, reject) => {
 				this.serial = new SerialPort(port, serialOptions, (err) => {
 					if (err) reject(new XError(XError.COMM_ERROR, 'Error opening serial port', err));
 					else resolve();
 				});
 			});
+			this.debug('Serial port opened');
 
 			if (this.resetOnConnect) {
+				this.debug('resetOnConnect flag set; sending reset');
 				this.resetOnConnect = false;
 				this.serial.write('\x18\n');
 				await pasync.setTimeout(5000);
+				this.debug('draining serial buffer');
 				this.serial.read(); // drain the serial buffer
 			}
 
 			// Initialize serial buffers and initial variables
 			this.serialReceiveBuf = '';
 			this.currentStatusReport = {};
+			this.debug('initConnection calling _commsReset()');
 			this._commsReset();
 
 			// Set up serial port communications handlers
 			const onSerialError = (err) => {
+				this.debug('Serial error ' + err);
 				err = new XError(XError.COMM_ERROR, 'Serial port communication error', err);
 				if (!this._initializing) this.emit('error', err); // don't emit during initialization 'cause that's handled separately (by rejecting the waiters during close())
 				this.close(err);
 				this._retryConnect();
 			};
 			const onSerialClose = () => {
+				this.debug('Serial close');
 				// Note that this isn't called during intended closures via this.close(), since this.close() first removes all handlers
 				let err = new XError(XError.COMM_ERROR, 'Serial port closed unexpectedly');
 				if (!this._initializing) this.emit('error', err);
@@ -759,11 +779,12 @@ class TinyGController extends Controller {
 			this._initializing = false;
 			this.emit('ready');
 			this.emit('statusUpdate');
-
+			this.debug('initConnection() done');
 		};
 
 		doInit()
 			.catch((err) => {
+				this.debug('initConnection() error ' + err);
 				this.emit('error', new XError(XError.COMM_ERROR, 'Error initializing connection', err));
 				this.close(err);
 				this._initializing = false;
@@ -772,6 +793,7 @@ class TinyGController extends Controller {
 	}
 
 	close(err) {
+		this.debug('close() ' + err);
 		if (err && !this.error) {
 			this.error = true;
 			this.errorData = err;
@@ -791,11 +813,19 @@ class TinyGController extends Controller {
 	}
 
 	_retryConnect() {
-		if (!this._retryConnectFlag) return;
-		if (this._waitingToRetry) return;
+		this.debug('_retryConnect()');
+		if (!this._retryConnectFlag) {
+			this.debug('Skipping, retry connect disabled');
+			return;
+		}
+		if (this._waitingToRetry) {
+			this.debug('Skipping, already waiting to retry');
+			return;
+		}
 		this._waitingToRetry = true;
 		setTimeout(() => {
 			this._waitingToRetry = false;
+			this.debug('_retryConnect() calling initConnection()');
 			this.initConnection(true);
 		}, 5000);
 	}
@@ -873,9 +903,13 @@ class TinyGController extends Controller {
 
 		// Check if this is a SYSTEM READY response indicating a reset
 		if ('r' in data && data.r.msg === 'SYSTEM READY') {
+			this.debug('Got SYSTEM READY message');
 			let err = new XError(XError.CANCELLED, 'Machine reset');
 			this.close(err);
-			if (!this._initializing) this._retryConnect();
+			if (!this._initializing) {
+				this.debug('calling _retryConnect() after receive SYSTEM READY');
+				this._retryConnect();
+			}
 			return;
 		}
 
@@ -1095,6 +1129,7 @@ class TinyGController extends Controller {
 
 	// Send serial commands to initialize machine and state after new serial connection
 	async _initMachine() {
+		this.debug('initMachine()');
 		// Relaxed json syntax; this parser can handle it
 		await this.request({ js: 0 });
 		// Echo off (ideally this would be set at the same time as the above)
@@ -1129,6 +1164,7 @@ class TinyGController extends Controller {
 				}
 			}
 		}
+		this.debug('initMachine() finished');
 	}
 
 	sendStream(stream) {
