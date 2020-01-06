@@ -163,13 +163,15 @@ class TinyGController extends Controller {
 
 	// Marks the front entry of the planner queue as executed and shifts it off the queue
 	_commsShiftPlannerMirror() {
-		this.debug('_commsShiftPlannerMirror()');
+		this.debug('_commsShiftPlannerMirror() plannerMirror.length ' + this.plannerMirror.length);
 		// Shift off the front entry of the planner queue, and handle each line id range
 		let lineidRange = this.plannerMirror.shift();
 		if (lineidRange) {
 			let topLineId = lineidRange[1]; // max line id to "resolve", inclusive
+			this.debug('Shifted top line id ' + topLineId);
 			// Resolve each line in the send queue until we've exceeded the top line id
 			while (this.sendQueue.length > 0 && this.sendQueue[0].lineid <= topLineId) {
+				this.debug('shifting sendQueue');
 				let sqEntry = this.sendQueue.shift();
 				// run hooks if present
 				if (sqEntry.hooks) {
@@ -184,8 +186,10 @@ class TinyGController extends Controller {
 		}
 		// Call executing hooks corresponding to next planner queue entry
 		if (this.plannerMirror.length > 0) {
+			this.debug('calling executing hooks');
 			this._commsCallExecutingHooks();
 		}
+		this.debug('end _commsShiftPlannerMirror()');
 	}
 
 	// Communications-related code for when a queue report is received from the device
