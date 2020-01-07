@@ -370,6 +370,7 @@ class TinyGController extends Controller {
 	// front-panel controls (ie, feed hold).  Lineid is added.
 	_sendBlock(block, immediate = false) {
 		//this.debug('_sendBlock() ' + block.str);
+		if (!this.serial) throw new XError(XError.INTERNAL_ERROR, 'Cannot send, no serial connection');
 		block.responseExpected = !!block.str.trim();
 
 		if (immediate) {
@@ -385,6 +386,7 @@ class TinyGController extends Controller {
 	// Pushes a block onto the sendQueue such that it will be next to be sent, and force it to be sent immediately.
 	_sendBlockImmediate(block) {
 		//this.debug('_sendBlockImmediate() ' + block.str);
+		if (!this.serial) throw new XError(XError.INTERNAL_ERROR, 'Cannot send, no serial connection');
 		block.responseExpected = !!block.str.trim();
 
 		// Need to insert the block immediately after the most recently sent block
@@ -688,6 +690,10 @@ class TinyGController extends Controller {
 		this._initializing = true;
 		this.emit('statusUpdate');
 
+		if (this.serial || this.sendQueue.length) {
+			this.close();
+		}
+
 		// Define an async function and call it so we can use async/await
 		const doInit = async () => {
 
@@ -726,6 +732,10 @@ class TinyGController extends Controller {
 				this.debug('draining serial buffer');
 				this.serial.read(); // drain the serial buffer
 			}
+
+			// This waiter is used for the pause during initialization later.  It's needed because
+			// we need to be able to reject this and exit initialization if an error occurs while paused.
+			let initializationPauseWaiter = pasync.waiter();
 
 			// Initialize serial buffers and initial variables
 			this.serialReceiveBuf = '';
@@ -797,6 +807,24 @@ class TinyGController extends Controller {
 			// to "flush" it, then wait a short period of time for any possible response to be received (and ignored).
 			this._writeToSerial('\n');
 			await pasync.setTimeout(500);
+			setTimeout(() => {
+				if (initializationPauseWaiter) {
+					initializationPauseWaiter.resolve();
+					initializationPauseWaiter = null;
+				}
+			}, 500);
+			const pauseCancelRunningOpsHandler = (err) => {
+				if (initializationPauseWaiter) {
+					initializationPauseWaiter.reject(err);
+					initializationPauseWaiter = null;
+				}
+			};
+			this.on('cancelRunningOps', pauseCancelRunningOpsHandler);
+			try {
+				await initializationPauseWaiter.promise;
+			} finally {
+				this.removeListener('cancelRunningOps', pauseCancelRunningOpsHandler);
+			}
 
 			// Initialize all the machine state properties
 			await this._initMachine();
@@ -933,7 +961,7 @@ class TinyGController extends Controller {
 	_handleReceiveSerialDataLine(line) {
 		//this.debug('receive line ' + line);
 		this.emit('received', line);
-		if (line[0] != '{') throw new XError(XError.PARSE_ERROR, 'Errror parsing received serial line', { data: line });
+		if (line[0] != '{') throw new XError(XError.PARSE_ERROR, 'Error parsing received serial line', { data: line });
 		let data = AbbrJSON.parse(line);
 
 		// Check if this is a SYSTEM READY response indicating a reset
@@ -1272,7 +1300,7 @@ class TinyGController extends Controller {
 		this._commsReset(err);
 		this.debug('_cancelRunningOps() calling _checkSynced()');
 		this._checkSynced();
-		this.debug('_cancelRunningOps() emitting cancelRunningOpe');
+		this.debug('_cancelRunningOps() emitting cancelRunningOps');
 		this.emit('cancelRunningOps', err);
 		this.debug('_cancelRunningOps() done');
 	}
