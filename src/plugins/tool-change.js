@@ -61,6 +61,7 @@ class ToolChangeProcessor extends GcodeProcessor {
 	}
 
 	pushGcode(gline) {
+		if (!gline) return;
 		if (typeof gline === 'string') gline = new GcodeLine(gline);
 		// handle tool offset by adjusting Z if present
 		if (this.currentToolOffset && gline.has(this.toolOffsetAxisLetter)) {
