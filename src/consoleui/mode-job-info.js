@@ -35,7 +35,11 @@ class ModeJobInfo extends ConsoleUIMode {
 			if (vmStatus.line) text += 'GCode line number: ' + vmStatus.line + '\n';
 			text += 'Lines processed: ' + vmStatus.lineCounter + '\n';
 		}
-		this.triggerSync('buildStatusText', { text });
+
+		let textObj = { text }; // wrap this is an object so it can be modified by the hook (by reference)
+		this.triggerSync('buildStatusText', textObj);
+		text = textObj.text;
+
 		if (status.job.state === 'error' && status.job.error) {
 			text += 'Error: ' + JSON.stringify(status.job.error) + '\n';
 		}

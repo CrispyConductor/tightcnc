@@ -223,7 +223,7 @@ class ToolChangeProcessor extends GcodeProcessor {
 
 
 function findCurrentJobGcodeProcessor(tightcnc, name, throwOnMissing = true) {
-	let currentJob = this.tightcnc.jobManager.currentJob;
+	let currentJob = tightcnc.jobManager.currentJob;
 	if (!currentJob || currentJob.state === 'cancelled' || currentJob.state === 'error' || currentJob.state === 'complete') {
 		throw new XError(XError.INTERNAL_ERROR, 'No currently running job');
 	}
