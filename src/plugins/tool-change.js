@@ -13,7 +13,7 @@ class ToolChangeProcessor extends GcodeProcessor {
 		this.vm = new GcodeVM(options);
 		this.bufferedGcode = null;
 		this.lastToolNumber = null;
-		this.stopSwitch = false;
+		this.stopSwitch = options.stopSwitch || false;
 		this.handleT = ('handleT' in options) ? options.handleT : true;
 		this.handleM6 = ('handleM6' in options) ? options.handleM6 : true;
 		this.toolChangeOnT = ('toolChangeOnT' in options) ? options.toolChangeOnT : true;
@@ -23,12 +23,15 @@ class ToolChangeProcessor extends GcodeProcessor {
 		this.currentToolOffset = 0;
 		this.toolOffsetAxis = this.tightcnc.config.toolChange.toolOffsetAxis;
 		this.toolOffsetAxisLetter = this.tightcnc.controller.axisLabels[this.toolOffsetAxis];
+		this.currentlyStopped = false;
 	}
 
 	getStatus() {
 		return {
+			stopped: this.currentlyStopped, // false, or string indicating why stopped
 			tool: this.lastToolNumber,
-			stopSwitch: this.stopSwitch
+			stopSwitch: this.stopSwitch,
+			toolOffset: this.currentToolOffset
 		};
 	}
 
@@ -39,7 +42,9 @@ class ToolChangeProcessor extends GcodeProcessor {
 
 	pushGcode(gline) {
 		if (typeof gline === 'string') gline = new GcodeLine(gline);
+		// handle tool offset by adjusting Z if present
 		if (this.currentToolOffset && gline.has(this.toolOffsetAxisLetter)) {
+			// by default use positive tool offsets (ie, a larger tool offset means a longer tool and increased Z height)
 			gline.set(this.toolOffsetAxisLetter, gline.get(this.toolOffsetAxisLetter) + this.currentToolOffset * (this.tightcnc.config.toolChange.negateToolOffset ? -1 : 1));
 			gline.addComment('to'); // to=tool offset
 		}
@@ -100,11 +105,13 @@ class ToolChangeProcessor extends GcodeProcessor {
 
 	async _doProgramStop(waitname = 'program_stop') {
 		if (this.programStopWaiter) return await this.programStopWaiter.promise;
+		this.currentlyStopped = waitname;
 		this.job.addWait(waitname);
 		this.programStopWaiter = pasync.waiter();
 		await this.programStopWaiter.promise;
 		this.programStopWaiter = null;
 		this.job.removeWait(waitname);
+		this.currentlyStopped = false;
 	}
 
 	async processGcode(gline) {
@@ -182,6 +189,25 @@ class ToolChangeProcessor extends GcodeProcessor {
 }
 
 
+function findCurrentJobGcodeProcessor(tightcnc, name, throwOnMissing = true) {
+	let currentJob = this.tightcnc.jobManager.currentJob;
+	if (!currentJob || currentJob.state === 'cancelled' || currentJob.state === 'error' || currentJob.state === 'complete') {
+		throw new XError(XError.INTERNAL_ERROR, 'No currently running job');
+	}
+	let gcodeProcessors = currentJob.gcodeProcessors || {};
+	for (let key in gcodeProcessors) {
+		if (gcodeProcessors[key].gcodeProcessorName === name) {
+			return gcodeProcessors[key];
+		}
+	}
+	if (throwOnMissing) {
+		throw new XError(XError.INTERNAL_ERROR, 'No ' + name + ' gcode processor found');
+	} else {
+		return null;
+	}
+}
+
+
 class ResumeFromStopOperation extends Operation {
 
 	getParamSchema() {
@@ -189,26 +215,60 @@ class ResumeFromStopOperation extends Operation {
 	}
 
 	async run(params) {
-		let gcodeProcessors = objtools.getPath(this, 'tightcnc.jobManager.currentJob.gcodeProcessors') || {};
-		let foundOne = false;
-		for (let key in gcodeProcessors) {
-			if (gcodeProcessors[key] instanceof ToolChangeProcessor) {
-				foundOne = true;
-				gcodeProcessors[key].resumeFromStop();
-			}
-		}
-		if (foundOne) {
-			return { success: true };
-		} else {
-			throw new XError(XError.INVALID_ARGUMENT, 'No running program stop processor');
-		}
+		findCurrentJobGcodeProcessor(this.tightcnc, 'toolchange').resumeFromStop();
+		return { success: true };
 	}
 
 }
+
+
+class SetToolOffsetOperation extends Operation {
+
+	getParamSchema() {
+		return {
+			toolOffset: {
+				type: 'number',
+				description: 'Tool offset.  If not supplied, use current Z position.'
+			},
+			accountForAutolevel: {
+				type: 'boolean',
+				default: true,
+				description: 'If true, and an autolevel processor is enabled for this job, use its surface map to adjust for tool length at the current X,Y position.  (Not used if toolOffset is supplied)'
+			}
+		};
+	}
+
+	async run(params) {
+		let toolchange = findCurrentJobGcodeProcessor(this.tightcnc, 'toolchange');
+		if (typeof params.toolOffset === 'number') {
+			toolchange.currentToolOffset = params.toolOffset;
+		} else {
+			let controller = this.tightcnc.controller;
+			let axisNum = this.tightcnc.config.toolChange.toolOffsetAxis;
+			let pos = controller.getPos();
+			let off = pos[axisNum];
+			if (params.accountForAutolevel) {
+				let autolevel = findCurrentJobGcodeProcessor(this.tightcnc, 'autolevel', false);
+				if (autolevel && autolevel.surfaceMap && axisNum === 2) {
+					let surfaceOffset = autolevel.surfaceMap.predictZ(pos.slice(0, 2));
+					if (typeof surfaceOffset === 'number') {
+						off -= surfaceOffset;
+					}
+				}
+			}
+			toolchange.currentToolOffset = off;
+		}
+		return { success: true };
+	}
+}
+
+
+
 
 module.exports.ToolChangeProcessor = ToolChangeProcessor;
 module.exports.registerServerComponents = function (tightcnc) {
 	tightcnc.registerGcodeProcessor('toolchange', ToolChangeProcessor);
 	tightcnc.registerOperation('resumeFromStop', ResumeFromStopOperation);
+	tightcnc.registerOperation('setToolOffset', SetToolOffsetOperation);
 };
 
