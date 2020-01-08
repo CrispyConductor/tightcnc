@@ -282,6 +282,12 @@ class ListForm {
 	}
 
 	selector(container, title, items, defaultSelected = 0, options = {}, handler = null) {
+		if (!container && this.consoleui) {
+			return this.consoleui.runInModal(async (c) => {
+				return await this.selector(c, title, items, defaultSelected, options, handler);
+			});
+		}
+
 		// Container box
 		let listContainer = blessed.box({
 			width: options.width || '100%',

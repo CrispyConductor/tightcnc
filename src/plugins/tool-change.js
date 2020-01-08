@@ -5,7 +5,27 @@ const GcodeVM = require('../../lib/gcode-vm');
 const objtools = require('objtools');
 const Operation = require('../server/operation');
 const pasync = require('pasync');
+const JobOption = require('../consoleui/job-option');
+const ListForm = require('../consoleui/list-form');
+const blessed = require('blessed');
 
+// Order: Must be after recovery processor
+/**
+ * This gcode processor can handle software tool changes and job stops.  It can intercept T, M6, M0, M1, and M60
+ * and pause the gcode stream, waiting for actions from the UI.  There is also some configuration associated
+ * with this in the config file.  Ensure those settings are correct before using.
+ *
+ * This should go in the gcode processor chain somewhere after a job recovery processor, so tool changes aren't
+ * executed for the skipped section of gcode.
+ *
+ * @class ToolChangeProcessor
+ * @param {Object} options - Options for this gcode processor (in addition to the base options)
+ *   @param {Boolean} handleT - Whether to intercept T words
+ *   @param {Boolean} handleM6 - Whether to intercept M6 words
+ *   @param {Boolean} toolChangeOnT - Whether to execute a tool change wait when a T word is seen
+ *   @param {Boolean} handleProgramStop - Whether to handle M0, M1, and M60
+ *   @param {Boolean} stopSwitch - Whether the optional stop switch is engaged
+ */
 class ToolChangeProcessor extends GcodeProcessor {
 
 	constructor(options = {}) {
@@ -108,10 +128,22 @@ class ToolChangeProcessor extends GcodeProcessor {
 		this.currentlyStopped = waitname;
 		this.job.addWait(waitname);
 		this.programStopWaiter = pasync.waiter();
-		await this.programStopWaiter.promise;
-		this.programStopWaiter = null;
-		this.job.removeWait(waitname);
-		this.currentlyStopped = false;
+		const chainerrorListener = (err) => {
+			if (this.programStopWaiter) {
+				this.programStopWaiter.reject(err);
+			}
+		};
+		this.on('chainerror', chainerrorListener);
+		try {
+			await this.programStopWaiter.promise;
+			this.job.removeWait(waitname);
+			this.currentlyStopped = false;
+		} catch (err) {
+			// this should only be reached in the case that a chainerror has already occurred on this stream, so just ignore the error here and let the chainerror propagate
+		} finally {
+			this.programStopWaiter = null;
+			this.removeListener('chainerror', chainerrorListener);
+		}
 	}
 
 	async processGcode(gline) {
@@ -263,12 +295,185 @@ class SetToolOffsetOperation extends Operation {
 }
 
 
-
-
 module.exports.ToolChangeProcessor = ToolChangeProcessor;
 module.exports.registerServerComponents = function (tightcnc) {
 	tightcnc.registerGcodeProcessor('toolchange', ToolChangeProcessor);
 	tightcnc.registerOperation('resumeFromStop', ResumeFromStopOperation);
 	tightcnc.registerOperation('setToolOffset', SetToolOffsetOperation);
+};
+
+
+
+
+class ToolChangeConsoleUIJobOption extends JobOption {
+
+	constructor(consoleui) {
+		super(consoleui);
+		this.tcOptions = {
+			handleToolChange: true,
+			handleJobStop: true,
+			toolChangeOnM6: true,
+			toolChangeOnT: true,
+			stopSwitch: false
+		};
+	}
+
+
+	async optionSelected() {
+		let formSchema = {
+			label: 'Tool Change / Job Stop Settings',
+			type: 'object',
+			properties: {
+				handleToolChange: {
+					type: 'boolean',
+					default: this.tcOptions.handleToolChange,
+					label: 'Handle tool change (T/M6)'
+				},
+				handleJobStop: {
+					type: 'boolean',
+					default: this.tcOptions.handleJobStop,
+					label: 'Handle job stop (M0/M1)'
+				},
+				toolChangeOnM6: {
+					type: 'boolean',
+					default: this.tcOptions.toolChangeOnM6,
+					label: 'Tool change on M6'
+				},
+				toolChangeOnT: {
+					type: 'boolean',
+					default: this.tcOptions.toolChangeOnT,
+					label: 'Tool change on T'
+				},
+				stopSwitch: {
+					type: 'boolean',
+					default: this.tcOptions.stopSwitch,
+					label: 'Optional stop switch engaged'
+				}
+			}
+		};
+		let form = new ListForm(this.consoleui);
+		let r = await form.showEditor(null, formSchema, this.alOptions);
+		if (r !== null) this.tcOptions = r;
+		this.newJobMode.updateJobInfoText();
+	}
+
+	getDisplayString() {
+		let strs = [];
+		if (this.tcOptions.handleToolChange) {
+			let tcTypes = [];
+			if (this.tcOptions.toolChangeOnM6) tcTypes.push('M6');
+			if (this.tcOptions.toolChangeOnT) tcTypes.push('T');
+			strs.push('Tool Change Handling (' + tcTypes.join(',') + ')');
+		}
+		if (this.tcOptions.handleJobStop) {
+			strs.push('Job Stop Handling');
+		}
+		return strs.join('\n') || null;
+	}
+
+	addToJobOptions(obj) {
+		if (this.tcOptions.handleToolChange || this.tcOptions.handleJobStop) {
+			if (!obj.gcodeProcessors) obj.gcodeProcessors = [];
+			obj.gcodeProcessors.push({
+				name: 'toolchange',
+				options: {
+					handleT: true,
+					handleM6: this.tcOptions.toolChangeOnM6,
+					toolChangeOnT: this.tcOptions.toolChangeOnT,
+					handleProgramStop: this.tcOptions.handleJobStop,
+					stopSwitch: this.tcOptions.stopSwitch
+				},
+				order: 800000
+			});
+		}
+	}
+
+}
+
+
+module.exports.registerConsoleUIComponents = function (consoleui) {
+	consoleui.registerJobOption('Tool Change / Job Stop', ToolChangeConsoleUIJobOption);
+
+	const doToolOffset = async() => {
+		let selected = await new ListForm(consoleui).selector(
+			null,
+			'Set Tool Offset',
+			[ 'Specify Offset', 'From Current Pos' ]
+		);
+		if (selected === 0) {
+			let offset = await new ListForm(consoleui).showEditor(consoleui.mainPane, {
+				type: 'number',
+				default: 0,
+				required: true,
+				label: 'Tool Offset'
+			});
+			if (typeof offset === 'number') {
+				await consoleui.runWithWait(async() => {
+					await consoleui.client.op('setToolOffset', {
+						toolOffset: offset
+					});
+				});
+			}
+		} else if (selected === 1) {
+			await consoleui.runWithWait(async() => {
+				await consoleui.client.op('setToolOffset', {});
+			});
+		}
+	};
+
+	let offsetSelectedSinceToolChange = false;
+	let lastJobWaitingBool = false;
+	let mkeys = [];
+
+	const doResumeFromStop = async(jobWaiting) => {
+		if (jobWaiting === 'tool_change' && !offsetSelectedSinceToolChange) {
+			let confirmed = await consoleui.showConfirm('No tool offset selected.  Press Esc to go back or Enter to continue anyway.');
+			if (!confirmed) return;
+		}
+		await consoleui.runWithWait(async() => {
+			await consoleui.client.op('resumeFromStop', {});
+		});
+		offsetSelectedSinceToolChange = false;
+	};
+
+	consoleui.modes.jobInfo.hookSync('buildStatusText', (textobj) => {
+		let status = consoleui.lastStatus;
+		let jobWaiting = (status.job && status.job.state === 'waiting' && status.job.waits[0]) || false;
+		if (jobWaiting === 'tool_change') {
+			textobj.text += '\n{blue-bg}Waiting for Tool Change{/blue-bg}\nPress c after changing tool.\n';
+		}
+		if (jobWaiting === 'program_stop') {
+			textobj.text += '\n{blue-bg}Program Stop{/blue-bg}\nPress c to continue from stop.\n';
+		}
+	});
+
+	consoleui.on('statusUpdate', (status) => {
+		let jobWaiting = (status.job && status.job.state === 'waiting' && status.job.waits[0]) || false;
+		if (!!jobWaiting !== lastJobWaitingBool) {
+			if (jobWaiting) {
+				let mkey;
+				mkey = consoleui.modes.jobInfo.registerModeKey([ 'c' ], [ 'c' ], 'Continue', () => {
+					doResumeFromStop(jobWaiting).catch((err) => consoleui.clientError(err));
+				});
+				mkeys.push(mkey);
+				if (jobWaiting === 'tool_change') {
+					mkey = consoleui.modes.jobInfo.registerModeKey([ 't' ], [ 't' ], 'Tool Offset', () => {
+						doToolOffset().catch((err) => consoleui.clientError(err));
+						offsetSelectedSinceToolChange = true;
+					});
+					mkeys.push(mkey);
+				}
+			} else if (mkeys.length) {
+				for (let mkey of mkeys) {
+					consoleui.modes.jobInfo.removeModeKey(mkey);
+				}
+				mkeys = [];
+				offsetSelectedSinceToolChange = false;
+			}
+			lastJobWaitingBool = !!jobWaiting;
+		}
+	});
+
+
 };
 

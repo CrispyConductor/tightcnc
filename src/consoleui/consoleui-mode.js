@@ -1,11 +1,14 @@
 const blessed = require('blessed');
+const CrispHooks = require('crisphooks');
 
-class ConsoleUIMode {
+class ConsoleUIMode extends CrispHooks {
 
 	constructor(consoleui) {
+		super();
 		this.consoleui = consoleui;
 		this.modeHints = [];
 		this.activeModeHints = [];
+		this.modeIsActive = false;
 	}
 
 	/**
@@ -14,7 +17,8 @@ class ConsoleUIMode {
 	init() {
 		this.box = blessed.box({
 			width: '100%',
-			height: '100%'
+			height: '100%',
+			tags: true
 		});
 	}
 
@@ -30,11 +34,36 @@ class ConsoleUIMode {
 			}
 		}
 		this.modeHints.splice(pos, 0, { keyNames, label, order });
+		this._refreshModeHints();
+		return this.modeHints[pos];
 	}
 
-	registerModeKey(keys, keyNames, keyLabel, fn) {
-		this.registerModeHint(keyNames, keyLabel);
+	removeModeHint(hint) {
+		this.modeHints = this.modeHints.filter((h) => h !== hint);
+		this._refreshModeHints();
+	}
+
+	registerModeKey(keys, keyNames, keyLabel, fn, order = 1000) {
+		let hint = this.registerModeHint(keyNames, keyLabel, order);
 		this.box.key(keys, fn);
+		return { hint, keys, fn };
+	}
+
+	removeModeKey(mkey) {
+		this.removeModeHint(mkey.hint);
+		this.box.unkey(mkey.keys, mkey.fn);
+	}
+
+	_refreshModeHints() {
+		if (!this.modeIsActive) return;
+		for (let hint of this.activeModeHints) {
+			this.consoleui.removeHint(hint);
+		}
+		this.activeModeHints = [];
+		for (let modeHint of this.modeHints) {
+			let hint = this.consoleui.addHint(modeHint.keyNames, modeHint.label);
+			this.activeModeHints.push(hint);
+		}
 	}
 
 	/**
@@ -47,12 +76,14 @@ class ConsoleUIMode {
 		}
 		this.consoleui.mainPane.append(this.box);
 		this.box.focus();
+		this.modeIsActive = true;
 	}
 
 	/**
 	 * Called by ConsoleUI when the mode is exited.  Must clean up after the mode.
 	 */
 	exitMode() {
+		this.modeIsActive = false;
 		for (let hint of this.activeModeHints) {
 			this.consoleui.removeHint(hint);
 		}

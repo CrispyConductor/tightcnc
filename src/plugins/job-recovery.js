@@ -318,7 +318,7 @@ function consoleUIRecoverJob(consoleui) {
 	async function doRecover() {
 		// Ask how much time to back up
 		let form = new ListForm(consoleui);
-		let recoverySettings = await form.showEditor(consoleui.mainPane, {
+		let recoverySettings = await form.showEditor(null, {
 			type: 'object',
 			label: 'Job Recovery Settings',
 			doneLabel: '[Start Recovery]',
