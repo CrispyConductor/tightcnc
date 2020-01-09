@@ -415,7 +415,12 @@ module.exports.registerConsoleUIComponents = function (consoleui) {
 		let status = consoleui.lastStatus;
 		let jobWaiting = (status.job && status.job.state === 'waiting' && status.job.waits[0]) || false;
 		if (jobWaiting === 'tool_change') {
-			textobj.text += '\n{blue-bg}Waiting for Tool Change{/blue-bg}\nPress c after changing tool.\n';
+			let toolNum = objtools.getPath(status, 'job.gcodeProcessors.toolchange.tool');
+			textobj.text += '\n{blue-bg}Waiting for Tool Change{/blue-bg}\n';
+			if (toolNum !== null && toolNum !== undefined) {
+				textobj.text += 'Tool number: ' + toolNum + '\n';
+			}
+			textobj.text += 'Press c after changing tool.\n';
 		}
 		if (jobWaiting === 'program_stop') {
 			textobj.text += '\n{blue-bg}Program Stop{/blue-bg}\nPress c to continue from stop.\n';

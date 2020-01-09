@@ -73,7 +73,7 @@ module.exports = {
 		postToolChange: [
 			'G53 G0 Z0',
 			'G0 X${x} Y${y}',
-			'G1 Z${z}'
+			'G1 Z${z + 0.5}'
 		],
 		// Which axis number tool offsets apply to (in standard config, Z=2)
 		toolOffsetAxis: 2,
