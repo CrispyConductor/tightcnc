@@ -127,7 +127,7 @@ class Macros {
 			return await this.runJS(macro, params, options);
 		} else if (typeof macro === 'string') {
 			// A filename to a javascript file
-			if (macro.indexOf('..') !== -1) throw new XError(XError.INVALID_ARGUMENT, '.. is not allowed in macro names');
+			if (macro.indexOf('..') !== -1 || path.isAbsolute(macro)) throw new XError(XError.INVALID_ARGUMENT, '.. is not allowed in macro names');
 			let filenames = [ this.tightcnc.getFilename(macro + '.js', 'macro', false), path.join(__dirname, 'macro', macro + '.js') ];
 			let code = null;
 			for (let filename of filenames) {
