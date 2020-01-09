@@ -3,6 +3,7 @@ const GcodeLine = require('../../lib/gcode-line');
 const pasync = require('pasync');
 const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
 const fs = require('fs');
+const path = require('path');
 
 class Macros {
 
@@ -126,13 +127,22 @@ class Macros {
 			return await this.runJS(macro, params, options);
 		} else if (typeof macro === 'string') {
 			// A filename to a javascript file
-			let filename = this.tightcnc.getFilename(macro + '.js', 'macro', false);
-			let code = await new Promise((resolve, reject) => {
-				fs.readFile(filename, { encoding: 'utf8' }, (err, data) => {
-					if (err) reject(err);
-					else resolve(data);
-				});
-			});
+			if (macro.indexOf('..') !== -1) throw new XError(XError.INVALID_ARGUMENT, '.. is not allowed in macro names');
+			let filenames = [ this.tightcnc.getFilename(macro + '.js', 'macro', false), path.join(__dirname, 'macro', macro + '.js') ];
+			let code = null;
+			for (let filename of filenames) {
+				try {
+					code = await new Promise((resolve, reject) => {
+						fs.readFile(filename, { encoding: 'utf8' }, (err, data) => {
+							if (err) reject(err);
+							else resolve(data);
+						});
+					});
+					break;
+				} catch (err) {}
+			}
+			if (!code) throw new XError(XError.NOT_FOUND, 'Macro ' + macro + ' not found');
+
 			return await this.runJS(code, params, options);
 		} else if (Array.isArray(macro) && typeof macro[0] === 'string') {
 			// An array of strings with substitutions
