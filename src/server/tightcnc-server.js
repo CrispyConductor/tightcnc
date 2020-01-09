@@ -85,6 +85,9 @@ class TightCNCServer extends EventEmitter {
 		this.loggerMem.log('other', 'Server started.');
 		this.loggerDisk.log('other', 'Server started.');
 
+		// Initialize macros
+		await this.macros.initMacros();
+
 		// Set up the controller
 		if (this.config.controller) {
 			let controllerClass = this.controllerClasses[this.config.controller];

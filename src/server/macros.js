@@ -4,11 +4,179 @@ const pasync = require('pasync');
 const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
 const fs = require('fs');
 const path = require('path');
+const { createSchema } = require('common-schema');
 
 class Macros {
 
 	constructor(tightcnc) {
 		this.tightcnc = tightcnc;
+		this.macroCache = {};
+	}
+
+	async initMacros() {
+		// Load macro cache and start cache refresh loop
+		await this._loadMacroCache();
+		setInterval(() => {
+			this._updateMacroCache()
+				.catch((err) => {
+					console.error('Error updating macro cache', err);
+				});
+		}, 10000);
+	}
+
+	async listAllMacros() {
+		let ret = [];
+		for (let key in this.macroCache) {
+			ret.push({
+				name: key,
+				params: this.macroCache[key].metadata && this.macroCache[key].metadata.params
+			});
+		}
+		return ret;
+	}
+
+	async _loadMacroCache() {
+		let newMacroCache = {};
+		let fileObjs = await this._listMacroFiles();
+		for (let fo of fileObjs) {
+			try {
+				fo.metadata = await this._loadMacroMetadata(await this._readFile(fo.absPath));
+			} catch (err) {
+				console.error('Error loading macro metadata', fo.name, err);
+			}
+			newMacroCache[fo.name] = fo;
+		}
+		this.macroCache = newMacroCache;
+	}
+
+	async _updateMacroCache() {
+		let fileObjs = await this._listMacroFiles();
+		let fileObjMap = {};
+		for (let fo of fileObjs) fileObjMap[fo.name] = fo;
+
+		// Delete anything from the cache that doesn't exist in the new listing
+		for (let key in this.macroCache) {
+			if (!(key in fileObjMap)) delete this.macroCache[key];
+		}
+
+		// For each macro file, if it has been updated (or is new) since the cache load, reload it
+		for (let key in fileObjMap) {
+			if (!(key in this.macroCache) || fileObjMap[key].stat.mtime.getTime() > this.macroCache[key].stat.mtime.getTime()) {
+				try {
+					fileObjMap[key].metadata = await this._loadMacroMetadata(await this._readFile(fileObjMap[key].absPath));
+				} catch (err) {
+					console.error('Error loading macro metadata', key, err);
+				}
+				this.macroCache[key] = fileObjMap[key];
+			}
+		}
+	}
+
+	async _updateMacroCacheOne(macroName) {
+		if (!(macroName in this.macroCache)) {
+			await this._updateMacroCache();
+			return;
+		}
+		let fo = this.macroCache[macroName];
+		let stat = await new Promise((resolve, reject) => {
+			fs.stat(fo.absPath, (err, stat) => {
+				if (err) reject(err);
+				else resolve(stat);
+			});
+		});
+		if (stat.mtime.getTime() > fo.stat.mtime.getTime()) {
+			try {
+				fo.stat = stat;
+				fo.metadata = await this._loadMacroMetadata(await this._readFile(fo.absPath));
+			} catch (err) {
+				console.error('Error loading macro metadata', macroName, err);
+			}
+		}
+	}
+
+	async _listMacroFiles() {
+		let dirs = [ this.tightcnc.getFilename(null, 'macro', false, true, true), path.join(__dirname, 'macro') ];
+		let ret = [];
+		for (let dir of dirs) {
+			try {
+				let files = await new Promise((resolve, reject) => {
+					fs.readdir(dir, (err, files) => {
+						if (err) reject(err);
+						else resolve(files);
+					});
+				});
+				for (let file of files) {
+					if (/\.js$/.test(file)) {
+						try {
+							let absPath = path.resolve(dir, file);
+							let stat = await new Promise((resolve, reject) => {
+								fs.stat(absPath, (err, stat) => {
+									if (err) reject(err);
+									else resolve(stat);
+								});
+							});
+							ret.push({
+								name: file.slice(0, -3),
+								absPath: absPath,
+								stat: stat
+							});
+						} catch (err) {
+							console.error('Error stat-ing macro file ' + absPath, err);
+						}
+					}
+				}
+			} catch (err) {}
+		}
+		return ret;
+	}
+
+	async _loadMacroMetadata(code) {
+		/* Macro metadata (parameters) is specified inside the macro file itself.  It looks like this:
+		 * macroMeta({ value: 'number', pos: [ 'number' ] })
+		 * The parameter to macroMeta is a commonSchema-style object specifying the macro parameters.
+		 * When running the macro, this function is a no-op and does nothing.  When extracting the
+		 * metadata, the macro is run, and the function throws an exception (which is then caught here).
+		 * When retrieving metadata, no other macro environment functions are available.  The macroMeta
+		 * function should be the first code executed.
+		 */
+
+		// Detect if there's a call to macroMeta
+		let hasMacroMeta = false;
+		for (let line of code.split(/\r?\n/g)) {
+			if (/^\s*macroMeta\s*\(/.test(line)) {
+				hasMacroMeta = true;
+				break;
+			}
+		}
+		if (!hasMacroMeta) return null;
+
+		// Construct the function to call and the macroMeta function
+		let fn = new AsyncFunction('tightcnc', 'macroMeta', code);
+		const macroMeta = (macroParams) => {
+			let metadata = { params: macroParams };
+			throw { metadata, isMacroMetadata: true };
+		};
+
+		// Run the macro and trap the exception containing metadata
+		let gotMacroMetadata = null;
+		try {
+			await fn(this.tightcnc, macroMeta);
+			throw new XError(XError.INTERNAL_ERROR, 'Expected call to macroMeta() in macro');
+		} catch (err) {
+			if (err && err.isMacroMetadata) {
+				gotMacroMetadata = err.metadata;
+			} else {
+				throw new XError(XError.INTERNAL_ERROR, 'Error getting macro metadata', err);
+			}
+		}
+		if (!gotMacroMetadata) return null;
+
+		// Return the metadata
+		let metadata = gotMacroMetadata;
+		if (metadata.params) {
+			metadata.params = createSchema(metadata.params).getData();
+		}
+		return metadata;
 	}
 
 	_prepMacroParam(value, key, env) {
@@ -60,7 +228,10 @@ class Macros {
 
 			tightcnc: this.tightcnc,
 			gcodeProcessor: options.gcodeProcessor,
-			controller: this.tightcnc.controller
+			controller: this.tightcnc.controller,
+			axisLabels: this.tightcnc.controller.axisLabels,
+
+			macroMeta: () => {} // this function is a no-op in normal operation
 		};
 		for (let key in params) {
 			if (!(key in env)) {
@@ -85,6 +256,22 @@ class Macros {
 		return await fn(...fnArgs);
 	}
 
+	_readFile(filename) {
+		return new Promise((resolve, reject) => {
+			fs.readFile(filename, { encoding: 'utf8' }, (err, data) => {
+				if (err) {
+					if (err && err.code === 'ENOENT') {
+						reject(new XError(XError.NOT_FOUND, 'File not found'));
+					} else {
+						reject(err);
+					}
+				} else {
+					resolve(data);
+				}
+			});
+		});
+	}
+
 	/**
 	 * Run a macro in any of the macro formats.
 	 *
@@ -101,6 +288,7 @@ class Macros {
 	 * - tightcnc - The tightcnc instance
 	 * - controller - Alias for tightcnc.controller
 	 * - gcodeProcessor - The GcodeProcessor, if running within a GcodeProcessor context
+	 * - axisLabels - An array of axis labels corresponding to position arrays
 	 * - push(gline) - Send out a gcode line, either as a GcodeLine instance or a string (which is parsed).  If running
 	 *   in a GcodeProcessor context, this pushes onto the output stream.  Otherwise, the line is sent directly to
 	 *   the controller.
@@ -128,21 +316,18 @@ class Macros {
 		} else if (typeof macro === 'string') {
 			// A filename to a javascript file
 			if (macro.indexOf('..') !== -1 || path.isAbsolute(macro)) throw new XError(XError.INVALID_ARGUMENT, '.. is not allowed in macro names');
-			let filenames = [ this.tightcnc.getFilename(macro + '.js', 'macro', false), path.join(__dirname, 'macro', macro + '.js') ];
-			let code = null;
-			for (let filename of filenames) {
-				try {
-					code = await new Promise((resolve, reject) => {
-						fs.readFile(filename, { encoding: 'utf8' }, (err, data) => {
-							if (err) reject(err);
-							else resolve(data);
-						});
-					});
-					break;
-				} catch (err) {}
+			// Get the macro metadata
+			await this._updateMacroCacheOne(macro);
+			if (!this.macroCache[macro]) throw new XError(XError.NOT_FOUND, 'Macro ' + macro + ' not found');
+			let metadata = this.macroCache[macro].metadata;
+			// Validate params
+			if (metadata.params) {
+				createSchema(metadata.params).normalize(params);
 			}
+			// Load the macro code
+			let code = this._readFile(this.macroCache[macro].absPath);
 			if (!code) throw new XError(XError.NOT_FOUND, 'Macro ' + macro + ' not found');
-
+			// Run the macro
 			return await this.runJS(code, params, options);
 		} else if (Array.isArray(macro) && typeof macro[0] === 'string') {
 			// An array of strings with substitutions

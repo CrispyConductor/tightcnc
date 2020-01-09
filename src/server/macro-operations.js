@@ -9,25 +9,13 @@ class OpListMacros extends Operation {
 		return {};
 	}
 	async run(params) {
-		let dirs = [ this.tightcnc.getFilename(null, 'macro', false, true, true), path.join(__dirname, 'macro') ];
-		let ret = [];
-		for (let dir of dirs) {
-			try {
-				let files = await new Promise((resolve, reject) => {
-					fs.readdir(dir, (err, files) => {
-						if (err) reject(err);
-						else resolve(files);
-					});
-				});
-				for (let file of files) {
-					if (/\.js$/.test(file)) {
-						ret.push(file.slice(0, -3));
-					}
-				}
-			} catch (err) {}
-		}
-		ret.sort();
-		return ret;
+		let list = await this.tightcnc.macros.listAllMacros();
+		list.sort((a, b) => {
+			if (a.name < b.name) return -1;
+			if (a.name > b.name) return 1;
+			return 0;
+		});
+		return list;
 	}
 }
 
