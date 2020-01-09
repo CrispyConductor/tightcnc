@@ -1,5 +1,6 @@
 const ConsoleUIMode = require('./consoleui-mode');
 const blessed = require('blessed');
+const ListForm = require('./list-form');
 
 class ModeControl extends ConsoleUIMode {
 
@@ -120,10 +121,26 @@ class ModeControl extends ConsoleUIMode {
 					this.sendTextbox.focus();
 					this.consoleui.render();
 					break;
+				case 'macroList':
+					await this._macroList();
+					break;
 
 				default:
 					throw new Error('Unknown keybind action ' + key);
 			}
+		}
+	}
+
+	async _macroList() {
+		let macroList = await this.consoleui.runWithWait(async() => {
+			await this.consoleui.client.op('listMacros', {});
+		});
+		let selected = await new ListForm(this.consoleui).selector(null, 'Run Macro', macroList);
+		if (typeof selected === 'number') {
+			let macro = macroList[selected];
+			this.consoleui.client.op('runMacro', { macro: macro, params: {} })
+				.catch((err) => this.consoleui.clientError('Macro error: ' + err));
+			this.consoleui.showTempMessage('Macro running.');
 		}
 	}
 

@@ -309,6 +309,14 @@ module.exports = {
 							params: {}
 						}
 					}
+				},
+				'runMacro': {
+					keys: [ 'c' ],
+					keyNames: [ 'c' ],
+					label: 'Macro',
+					action: {
+						macroList: true
+					}
 				}
 			}
 		}
