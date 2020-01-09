@@ -160,7 +160,7 @@ class JobRecoveryProcessor extends GcodeProcessor {
 	syncMachineToVMState(vmState) {
 		let lines = this.vm.syncMachineToState({
 			vmState: vmState,
-			include: [ 'motionMode', 'feed', 'arcPlane', 'incremental', 'inverseFeed', 'units', 'spindle', 'coolant' ]
+			include: [ 'motionMode', 'feed', 'arcPlane', 'incremental', 'inverseFeed', 'units', 'spindle', 'coolant', 'tool' ]
 		});
 		for (let line of lines) {
 			this.pushGcode(line);
