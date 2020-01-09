@@ -28,6 +28,24 @@ const getRecoveryFilename = (tightcnc) => {
 	return tightcnc.getFilename('_recovery.json', 'data');
 };
 
+function findCurrentJobGcodeProcessor(tightcnc, name, throwOnMissing = true) {
+	let currentJob = tightcnc.jobManager.currentJob;
+	if (!currentJob || currentJob.state === 'cancelled' || currentJob.state === 'error' || currentJob.state === 'complete') {
+		throw new XError(XError.INTERNAL_ERROR, 'No currently running job');
+	}
+	let gcodeProcessors = currentJob.gcodeProcessors || {};
+	for (let key in gcodeProcessors) {
+		if (gcodeProcessors[key].gcodeProcessorName === name) {
+			return gcodeProcessors[key];
+		}
+	}
+	if (throwOnMissing) {
+		throw new XError(XError.INTERNAL_ERROR, 'No ' + name + ' gcode processor found');
+	} else {
+		return null;
+	}
+}
+
 /**
  * This gcode processor is added to a job to periodically save out job state and enable recovery.  It should be
  * positioned in the processor chain at the end of the chain, with the exception of being before a JobRecoveryProcessor
@@ -56,6 +74,12 @@ class JobRecoveryTracker extends GcodeProcessor {
 			while (!this.hasEnded) {
 				await pasync.setTimeout(this.recoverySaveInterval * 1000);
 				if (this.hasEnded) break;
+
+				try {
+					let rproc = findCurrentJobGcodeProcessor(this.tightcnc, 'recoveryprocessor');
+					if (!rproc.startedPassThrough) return; // don't save state before recovery processor starts forwarding through data
+				} catch (err) {}
+
 				let data = JSON.stringify(this.saveData) + '\n';
 				await new Promise((resolve, reject) => {
 					fs.writeFile(getRecoveryFilename(this.tightcnc), data, (err) => {
