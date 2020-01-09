@@ -63,7 +63,7 @@ class ToolChangeProcessor extends GcodeProcessor {
 		if (!gline) return;
 		if (typeof gline === 'string') gline = new GcodeLine(gline);
 		// handle tool offset by adjusting Z if present
-		if (this.currentToolOffset && gline.has(this.toolOffsetAxisLetter)) {
+		if (this.currentToolOffset && gline.has(this.toolOffsetAxisLetter) && !gline.has('G53')) {
 			// by default use positive tool offsets (ie, a larger tool offset means a longer tool and increased Z height)
 			gline.set(this.toolOffsetAxisLetter, gline.get(this.toolOffsetAxisLetter) + this.currentToolOffset * (this.tightcnc.config.toolChange.negateToolOffset ? -1 : 1));
 			gline.addComment('to'); // to=tool offset
@@ -116,7 +116,7 @@ class ToolChangeProcessor extends GcodeProcessor {
 		// Move to position to restart job
 		let moveBackGcode = (vmState.motionMode || 'G0');
 		for (let axisNum = 0; axisNum < vmState.pos.length; axisNum++) {
-			if (vmState.hasMovedToAxes(axisNum)) {
+			if (vmState.hasMovedToAxes[axisNum]) {
 				moveBackGcode += ' ' + vmState.axisLabels[axisNum].toUpperCase() + vmState.pos[axisNum];
 			}
 		}
