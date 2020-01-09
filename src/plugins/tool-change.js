@@ -31,7 +31,6 @@ class ToolChangeProcessor extends GcodeProcessor {
 	constructor(options = {}) {
 		super(options, 'toolchange', true);
 		this.vm = new GcodeVM(options);
-		this.bufferedGcode = null;
 		this.lastToolNumber = null;
 		this.stopSwitch = options.stopSwitch || false;
 		this.handleT = ('handleT' in options) ? options.handleT : true;
@@ -180,16 +179,8 @@ class ToolChangeProcessor extends GcodeProcessor {
 		// Check if this line indicates a program stop we have to handle
 		if (isToolChange || isProgramStop) {
 
-			// Attach an executed handler to the buffered line and wait for it to be executed (so we know the prior gcode line has completed)
-			if (this.bufferedGcode) {
-				await new Promise((resolve, reject) => {
-					let bufLine = this.bufferedGcode;
-					bufLine.hookSync('executed', () => resolve());
-					bufLine.hookSync('error', (err) => reject(err));
-					this.pushGcode(bufLine);
-					this.bufferedGcode = null;
-				});
-			}
+			// Flush downstream processors
+			await this.flushDownstreamProcessorChain();
 
 			// Wait for controller to sync
 			await this.tightcnc.controller.waitSync();
@@ -197,26 +188,9 @@ class ToolChangeProcessor extends GcodeProcessor {
 			// Handle the operation
 			if (isToolChange) await this._doToolChange();
 			else if (isProgramStop) await this._doProgramStop();
-
-			// Put this line into the (newly vacated) buffer and resume normal operation
-			this.bufferedGcode = gline;
-
-		} else {
-			// This is not a line triggering a tool change.  Push out the buffered gcode line and store this one.
-			if (this.bufferedGcode) {
-				this.pushGcode(this.bufferedGcode);
-			}
-			this.bufferedGcode = gline;
 		}
 
-		return undefined;
-	}
-
-	flushGcode() {
-		if (this.bufferedGcode) {
-			this.pushGcode(this.bufferedGcode);
-			this.bufferedGcode = null;
-		}
+		return gline;
 	}
 
 }

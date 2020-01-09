@@ -29,32 +29,11 @@ class Macros {
 	}
 
 	_makeMacroEnv(params, options) {
-		let mostRecentSentGline = null;
-		let mostRecentSentGlineExecuted = true;
-		let mostRecentSentGlineError = null;
-		let mostRecentSentGlineWaiter = null;
 		let env = {
 			// push gcode function available inside macro.  In gcode processor, pushes onto the gcode processor stream.
 			// Otherwise, sends to controller.  Tracks if the most recent sent line is executed for syncing.
 			push: (gline) => {
 				if (typeof gline === 'string') gline = new GcodeLine(gline);
-				mostRecentSentGline = gline;
-				mostRecentSentGlineExecuted = false;
-				mostRecentSentGlineError = null;
-				let waiter = pasync.waiter();
-				mostRecentSentGlineWaiter = waiter;
-				gline.hookSync('executed', () => {
-					if (mostRecentSentGline === gline) {
-						mostRecentSentGlineExecuted = true;
-						waiter.resolve();
-					}
-				});
-				gline.hookSync('error', (err) => {
-					if (mostRecentSentGline === gline) {
-						mostRecentSentGlineError = err;
-						waiter.reject(err);
-					}
-				});
 				if (options.push) {
 					options.push(gline);
 				} else if (options.gcodeProcessor) {
@@ -67,8 +46,8 @@ class Macros {
 			// Waits until all sent gcode has been executed and machine is stopped
 			sync: async() => {
 				if (options.sync) return await options.sync();
-				if (!mostRecentSentGlineExecuted) {
-					await mostRecentSentGlineWaiter.promise;
+				if (options.gcodeProcessor) {
+					await options.gcodeProcessor.flushDownstreamProcessorChain();
 				}
 				await this.tightcnc.controller.waitSync();
 			},
