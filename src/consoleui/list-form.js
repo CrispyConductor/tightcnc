@@ -77,6 +77,8 @@ class ListForm {
 				if (r !== null) r = !!r;
 			} else if (schemaData.type === 'object') {
 				r = await this._editObject(container, schemaData, value || {}, options);
+			} else if (schemaData.type === 'array' && schemaData.isCoordinates) {
+				r = await this._editCoordinates(container, schemaData, value || [ 0, 0, 0 ], options);
 			} else if (schemaData.type === 'array') {
 				r = await this._editArray(container, schemaData, value || [], options);
 			} else if (schemaData.type === 'string') {
@@ -199,6 +201,53 @@ class ListForm {
 			keyStr += ': ' + value;
 		}
 		return keyStr;
+	}
+
+	async _editCoordinates(container, schemaData, value, options = {}) {
+		let coordObj = {};
+		let coordObjSchema = {
+			type: 'object',
+			properties: {}
+		};
+		let axisLabels = (this.consoleui && this.consoleui.axisLabels) || [ 'x', 'y', 'z' ];
+		let usedAxes = (this.consoleui && this.consoleui.usedAxes) || [ true, true, true ];
+		let maxNumAxes = Math.min(schemaData.coordinatesLength || 1000, axisLabels.length, usedAxes.length);
+		for (let i = 0; i < maxNumAxes; i++) {
+			if (usedAxes[i]) {
+				let def = value && value[i];
+				if (def === null || def === undefined) def = (schemaData.default && schemaData.default[i]) || 0;
+				coordObj[axisLabels[i].toUpperCase()] = def;
+				coordObjSchema.properties[axisLabels[i].toUpperCase()] = { type: 'number' };
+			}
+		}
+
+		let extraKeys = [];
+		if (this.consoleui) {
+			extraKeys.push({
+				hint: [ 'c', 'Use Current Pos' ],
+				keys: [ 'c' ],
+				fn: ({data}) => {
+					let pos = [ 111, 222, 333 ];
+					for (let i = 0; i < maxNumAxes && i < pos.length; i++) {
+						if (usedAxes[i]) {
+							let v = pos[i];
+							if (typeof v === 'number') {
+								data[axisLabels[i].toUpperCase()] = v;
+							}
+						}
+					}
+				}
+			});
+		}
+
+		let r = await this._editObject(container, coordObjSchema, coordObj, { extraKeys });
+		if (r === null) return null;
+		let newValue = [];
+		for (let i = 0; i < maxNumAxes; i++) {
+			let v = r[axisLabels[i].toUpperCase()] || 0;
+			newValue.push(v);
+		}
+		return newValue;
 	}
 
 	async _editMixed(container, schemaData, value = null, options = {}) {
@@ -470,6 +519,26 @@ class ListForm {
 
 		let totalNumItems = keyStrs.length;
 
+		options = objtools.deepCopy(options);
+		if (!options.keys) options.keys = [];
+		const addExtraKey = (k) => {
+			let origFn = k.fn;
+			k.fn = (info) => {
+				info.data = value;
+				origFn(info);
+				for (let i = 0; i < keysByIndex.length; i++) {
+					info.listBox.setItem(i, getEntryLabel(keysByIndex[i], value[keysByIndex[i]]));
+				}
+				this.screen.render();
+			};
+			options.keys.push(k);
+		};
+		if (options.extraKeys) {
+			for (let k of options.extraKeys) {
+				addExtraKey(k);
+			}
+		}
+
 		let r = await this.selector(container, title, keyStrs, 0, options, async (selected, listBox) => {
 			if (selected === totalNumItems - 1) {
 				if (options.normalize) {
@@ -723,7 +792,7 @@ class ListForm {
 module.exports = ListForm;
 
 
-
+/*
 var screen = blessed.screen({
 	smartCSR: true
 });
@@ -766,6 +835,11 @@ let schema = {
 		},
 		mixed: {
 			type: 'mixed'
+		},
+		coor: {
+			type: [ Number ],
+			isCoordinates: true,
+			default: [ 1, 2, 3 ]
 		}
 	}
 };
@@ -782,5 +856,5 @@ lf.showEditor(screen, schema)
 		console.error('Error', err);
 		process.exit(1);
 	});
-
+*/
 
