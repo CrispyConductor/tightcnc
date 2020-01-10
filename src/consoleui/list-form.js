@@ -6,7 +6,7 @@ const objtools = require('objtools');
 class ListForm {
 
 	constructor(consoleui, options = {}) {
-		if (consoleui.screen) {
+		if (consoleui.screen && !consoleui.setTerminal) {
 			this.consoleui = consoleui;
 			this.screen = consoleui.screen;
 		} else {
@@ -77,6 +77,8 @@ class ListForm {
 				if (r !== null) r = !!r;
 			} else if (schemaData.type === 'object') {
 				r = await this._editObject(container, schemaData, value || {}, options);
+			} else if (schemaData.type === 'array') {
+				r = await this._editArray(container, schemaData, value || [], options);
 			} else if (schemaData.type === 'string') {
 				r = await this.lineEditor(container, (schemaData.title || schemaData.label || options.key || 'Value') + ':', value, options);
 			} else if (schemaData.type === 'number') {
@@ -167,7 +169,7 @@ class ListForm {
 				try {
 					value = options.normalize(value);
 				} catch (err) {
-					this._message(container, err.message);
+					this._message(container, err.message).then(() => textbox.focus());
 					return;
 				}
 			}
@@ -192,6 +194,102 @@ class ListForm {
 			keyStr += ': ' + value;
 		}
 		return keyStr;
+	}
+
+	async _editArray(container, schemaData, value = [], options = {}) {
+		if (!value) value = [];
+		let elementsSchema = schemaData.elements;
+		value = objtools.deepCopy(value || []);
+		let title = schemaData.title || schemaData.label || options.key || 'Edit Properties';
+		let elementLabels = value.map((el, idx) => this._getEntryDisplayLabel(idx, el, elementsSchema));
+		elementLabels.push(schemaData.doneLabel || '[Done]');
+		options = objtools.deepCopy(options);
+		options.keys = [
+			{
+				hint: [ '+',  'Add' ],
+				keys: [ '+', '=' ],
+				fn: ({ listBox, selected }) => {
+					if (selected > value.length) return;
+					value.splice(selected, 0, elementsSchema.default);
+					listBox.insertItem(selected, '');
+					for (let i = selected; i < value.length; i++) {
+						listBox.setItem(i, this._getEntryDisplayLabel(i, value[i], elementsSchema));
+					}
+					this.screen.render();
+				}
+			},
+			{
+				hint: [ 'Del',  'Remove' ],
+				keys: [ 'delete' ],
+				fn: ({ listBox, selected }) => {
+					if (selected >= value.length) return;
+					value.splice(selected, 1);
+					listBox.removeItem(selected);
+					for (let i = selected; i < value.length; i++) {
+						listBox.setItem(i, this._getEntryDisplayLabel(i, value[i], elementsSchema));
+					}
+					this.screen.render();
+				}
+			}
+		];
+		let r = await this.selector(container, title, elementLabels, 0, options, async (selected, listBox) => {
+			if (selected >= value.length) {
+				if (options.normalize) {
+					try {
+						value = options.normalize(value);
+					} catch (err) {
+						this._message(container, err.message);
+						return true;
+					}
+				}
+				return false;
+			}
+
+			let elementValue = value[selected];
+			if (elementValue === null || elementValue === undefined) elementValue = elementsSchema.default;
+			let opts = objtools.deepCopy(schemaData.formOptions || {});
+			opts.key = selected;
+			if (elementsSchema.actionFn) {
+				try {
+					await elementsSchema.actionFn({
+						selectedIndex: selected,
+						selectedKey: selected,
+						selectedCurValue: elementValue,
+						opts,
+						listBox,
+						array: value
+					});
+				} catch (err) {
+					await this._message(container, err.message);
+				}
+				for (let i = 0; i < value.length; i++) {
+					listBox.setItem(i, this._getEntryDisplayLabel(i, value[i], elementsSchema));
+				}
+				this.screen.render();
+				return true;
+			} else {
+				let newValue = await this._editValue(container, elementsSchema, elementValue, opts);
+				if (newValue !== null) {
+					value[selected] = newValue;
+					listBox.setItem(selected, this._getEntryDisplayLabel(selected, value[selected], elementsSchema));
+				}
+				this.screen.render();
+				return true;
+			}
+		});
+		if (r === null) {
+			if (options.returnDefaultOnCancel === false) return null;
+			// NOTE: Hitting Esc while editing an object still counts as editing the object if fields
+			// have been modified, unless the object fails validation
+			if (options.normalize) {
+				try {
+					value = options.normalize(value);
+				} catch (e) {
+					return null;
+				}
+			}
+		}
+		return value;
 	}
 
 	async _editObject(container, schemaData, value = {}, options = {}) {
@@ -329,7 +427,15 @@ class ListForm {
 		container.append(listContainer);
 		listBox.focus();
 
-		if (this.consoleui) this.consoleui.pushHintOverrides([ [ 'Esc', 'Cancel' ], [ 'Up/Down', 'Select' ], [ 'Enter', 'Done' ] ]);
+		if (this.consoleui) {
+			let hints = [ [ 'Esc', 'Cancel' ], [ 'Up/Down', 'Select' ], [ 'Enter', 'Done' ] ];
+			if (options.keys) {
+				for (let el of options.keys) {
+					if (el.hint) hints.push(el.hint);
+				}
+			}
+			this.consoleui.pushHintOverrides(hints);
+		}
 
 		let waiter = pasync.waiter();
 
@@ -381,6 +487,21 @@ class ListForm {
 			cleanup();
 			waiter.resolve(null);
 		});
+
+		// Custom keys
+		if (options.keys) {
+			for (let el of options.keys) {
+				if (el.keys && el.fn) {
+					listBox.key(el.keys, () => {
+						el.fn({
+							container,
+							listBox,
+							selected: listBox.selected
+						});
+					});
+				}
+			}
+		}
 
 		this.screen.render();
 
@@ -442,12 +563,12 @@ class ListForm {
 module.exports = ListForm;
 
 
-/*
+
 var screen = blessed.screen({
 	smartCSR: true
 });
 
-let lf = new ListForm(screen, {
+let schema = {
 	type: 'object',
 	label: 'Edit my object',
 	properties: {
@@ -476,11 +597,14 @@ let lf = new ListForm(screen, {
 		subobj: {
 			prop1: String,
 			prop2: Number
-		}
+		},
+		artest: { type: 'array', elements: Number, default: [ 1, 2, 3 ] }
 	}
-});
+};
 
-lf.showEditor(screen)
+let lf = new ListForm(screen);
+
+lf.showEditor(screen, schema)
 	.then((r) => {
 		screen.destroy();
 		console.log('Result', r);
@@ -490,5 +614,5 @@ lf.showEditor(screen)
 		console.error('Error', err);
 		process.exit(1);
 	});
-*/
+
 
