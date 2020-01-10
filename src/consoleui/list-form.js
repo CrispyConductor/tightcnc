@@ -199,6 +199,9 @@ class ListForm {
 		}
 		if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
 			keyStr += ': ' + value;
+		} else if (value && Array.isArray(value) && schemaData.isCoordinates) {
+			let usedAxes = (this.consoleui && this.consoleui.usedAxes) || [ true, true, true ];
+			keyStr += ': ' + value.filter((n, idx) => usedAxes[idx]).join(', ');
 		}
 		return keyStr;
 	}
@@ -402,7 +405,7 @@ class ListForm {
 
 		let mapKeys = Object.keys(value); // used to ensure consistent ordering
 		let keyStrs = mapKeys.map((k) => {
-			return this._getEntryDisplayLabel(k, value[k]);
+			return this._getEntryDisplayLabel(k, value[k], schemaData.values);
 		});
 		keyStrs.push(schemaData.doneLabel || '[Done]');
 
@@ -474,7 +477,7 @@ class ListForm {
 					await this._message(container, err.message);
 				}
 				for (let i = 0; i < mapKeys.length; i++) {
-					listBox.setItem(i, this._getEntryDisplayLabel(mapKeys[i], value[mapKeys[i]]));
+					listBox.setItem(i, this._getEntryDisplayLabel(mapKeys[i], value[mapKeys[i]], schemaData.values));
 				}
 				this.screen.render();
 				return true;
@@ -482,7 +485,7 @@ class ListForm {
 				let newValue = await this._editValue(container, schemaData.values, curValue, opts);
 				if (newValue !== null) {
 					value[key] = newValue;
-					listBox.setItem(selected, this._getEntryDisplayLabel(key, newValue));
+					listBox.setItem(selected, this._getEntryDisplayLabel(key, newValue, schemaData.values));
 				}
 				this.screen.render();
 				return true;
