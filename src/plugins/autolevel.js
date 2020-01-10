@@ -489,23 +489,6 @@ class AutolevelConsoleUIJobOption extends JobOption {
 		});
 	}
 
-	async _editCoords(container, label, def) {
-		let form = new ListForm(this.consoleui);
-		let defaultStr;
-		if (def) {
-			defaultStr = def.slice(0, 2).join(',');
-		} else {
-			defaultStr = '';
-		}
-		let val = await form.lineEditor(container, label, defaultStr);
-		if (!val) return def;
-		if (!/^-?[0-9]+(\.[0-9]+)? *, *-?[0-9]+(\.[0-9]+)?$/.test(val)) {
-			await form._message(container, 'Invalid coordinates');
-			return await this._editCoords(container, label, def);
-		}
-		return val.split(/ *, */g).map((s) => parseFloat(s));
-	}
-
 	async _chooseBounds(container, def) {
 		let lowerDefault = (def && def[0]) || [ 0, 0 ];
 		let upperDefault = (def && def[1]) || [ 0, 0 ];
@@ -533,15 +516,17 @@ class AutolevelConsoleUIJobOption extends JobOption {
 					type: [ Number ],
 					label: 'Lower Bound',
 					default: lowerDefault,
-					editFn: async (container, _sd, val) => await this._editCoords(container, 'Lower Bound', val),
-					shortDisplayLabel: (val) => Array.isArray(val) ? val.join(',') : null
+					shortDisplayLabel: (val) => Array.isArray(val) ? val.slice(0, 2).join(',') : null,
+					isCoordinates: true,
+					coordinatesLength: 2
 				},
 				upper: {
 					type: [ Number ],
 					label: 'Upper Bound',
 					default: upperDefault,
-					editFn: async (container, _sd, val) => await this._editCoords(container, 'Upper Bound', val),
-					shortDisplayLabel: (val) => Array.isArray(val) ? val.join(',') : null
+					shortDisplayLabel: (val) => Array.isArray(val) ? val.slice(0, 2).join(',') : null,
+					isCoordinates: true,
+					coordinatesLength: 2
 				}
 			}
 		};
@@ -565,9 +550,10 @@ class AutolevelConsoleUIJobOption extends JobOption {
 					elements: [ Number ],
 					label: 'Select Bounds',
 					editFn: async (container) => {
-						return await this._chooseBounds(container);
+						let r = await this._chooseBounds(container);
+						return [ r, !r ];
 					},
-					shortDisplayLabel: (val) => val ? val.map((a) => a.join(',')).join(' - ') : null,
+					shortDisplayLabel: (val) => val ? val.map((a) => a.slice(0, 2).join(',')).join(' - ') : null,
 					required: true
 				},
 				surfaceMapFilename: {
@@ -669,7 +655,8 @@ class AutolevelConsoleUIJobOption extends JobOption {
 					type: 'string',
 					label: 'Surface Map',
 					editFn: async (container) => {
-						return await this._chooseSurfaceMap(container);
+						let r = await this._chooseSurfaceMap(container);
+						return [ r, !r ];
 					}
 				}
 			}

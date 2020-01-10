@@ -9,6 +9,7 @@ class ModeControl extends ConsoleUIMode {
 		this.keybinds = consoleui.config.consoleui.control.keybinds;
 		this.moveIncrement = 1;
 		this.onlyAxes = null;
+		this.macroParamCache = {};
 	}
 
 	async _executeKeybind(action) {
@@ -141,8 +142,14 @@ class ModeControl extends ConsoleUIMode {
 			let macro = macroList[selected];
 			let macroParams = {};
 			if (macro.params && macro.params.type === 'object' && Object.keys(macro.params.properties).length > 0) {
-				macroParams = await new ListForm(this.consoleui).showEditor(null, macro.params, undefined, { returnDefaultOnCancel: false });
-				if (!macroParams) return;
+				let form = new ListForm(this.consoleui);
+				macroParams = await form.showEditor(null, macro.params, this.macroParamCache[macro] || macro.params.default || {}, { returnValueOnCancel: true });
+				if (form.editorCancelled) {
+					if (macroParams) this.macroParamCache[macro] = macroParams;
+					return;
+				} else {
+					if (!macroParams) return;
+				}
 			}
 			this.consoleui.client.op('runMacro', { macro: macro.name, params: macroParams })
 				.catch((err) => this.consoleui.clientError('Macro error: ' + err));

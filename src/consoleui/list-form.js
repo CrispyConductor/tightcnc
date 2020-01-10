@@ -25,12 +25,17 @@ class ListForm {
 		if (!Schema.isSchema(schema)) schema = createSchema(schema);
 		let schemaData = schema.getData();
 		if (defaultVal === undefined) defaultVal = schemaData.default;
-		let val = await this._editValue(container, schemaData, defaultVal, options);
-		if (val === null) { // On cancel
-			if (options.returnDefaultOnCancel === false) return null;
+		let [ val, cancel ] = await this._editValue(container, schemaData, defaultVal, options);
+		this.editorCancelled = cancel || false;
+		if (val === null || cancel) { // On cancel
+			if (options.returnDefaultOnCancel === false && !options.returnValueOnCancel) return null;
 			// Return default value only if default is valid
 			try {
-				val = schema.normalize(defaultVal);
+				if (options.returnValueOnCancel && val !== null) {
+					val = schema.normalize(val);
+				} else {
+					val = schema.normalize(defaultVal);
+				}
 			} catch (e) {
 				return null;
 			}
@@ -61,7 +66,7 @@ class ListForm {
 	}
 
 	async _editValue(container, schemaData, value, options = {}) {
-		let r;
+		let r, cancel;
 		options = objtools.deepCopy(options);
 		options.normalize = (val) => {
 			return createSchema(schemaData).normalize(val);
@@ -70,19 +75,23 @@ class ListForm {
 			if (value === null || value === undefined) value = schemaData.default;
 			if (schemaData.editFn) {
 				r = await schemaData.editFn(container, schemaData, value, options);
+				cancel = r === null;
+				if (Array.isArray(r)) { cancel = r[1]; r = r[0]; }
 			} else if (schemaData.enum) {
-				r = await this._enumSelector(container, schemaData.title || schemaData.label || options.key || 'Select Value', schemaData.enum, value, options);
+				[ r, cancel ] = await this._enumSelector(container, schemaData.title || schemaData.label || options.key || 'Select Value', schemaData.enum, value, options);
 			} else if (schemaData.type === 'boolean') {
 				r = await this.selector(container, schemaData.title || schemaData.label || options.key || 'False or True', [ 'FALSE', 'TRUE' ], value ? 1 : 0, options);
+				cancel = r === null;
 				if (r !== null) r = !!r;
 			} else if (schemaData.type === 'object') {
-				r = await this._editObject(container, schemaData, value || {}, options);
+				[ r, cancel ] = await this._editObject(container, schemaData, value || {}, options);
 			} else if (schemaData.type === 'array' && schemaData.isCoordinates) {
-				r = await this._editCoordinates(container, schemaData, value || [ 0, 0, 0 ], options);
+				[ r, cancel ] = await this._editCoordinates(container, schemaData, value || [ 0, 0, 0 ], options);
 			} else if (schemaData.type === 'array') {
-				r = await this._editArray(container, schemaData, value || [], options);
+				[ r, cancel ] = await this._editArray(container, schemaData, value || [], options);
 			} else if (schemaData.type === 'string') {
 				r = await this.lineEditor(container, (schemaData.title || schemaData.label || options.key || 'Value') + ':', value, options);
+				cancel = r === null;
 			} else if (schemaData.type === 'number') {
 				options.normalize = (r) => {
 					if (!r.length || isNaN(r)) {
@@ -92,15 +101,16 @@ class ListForm {
 					}
 				};
 				r = await this.lineEditor(container, (schemaData.title || schemaData.label || options.key || 'Value') + ':', value, options);
+				cancel = r === null;
 			} else if (schemaData.type === 'mixed') {
-				r = await this._editMixed(container, schemaData, value, options);
+				[ r, cancel ] = await this._editMixed(container, schemaData, value, options);
 			} else if (schemaData.type === 'map') {
-				r = await this._editMap(container, schemaData, value || {}, options);
+				[ r, cancel ] = await this._editMap(container, schemaData, value || {}, options);
 			} else {
 				throw new Error('Unsupported edit schema type');
 			}
 			//if (r === null) r = value;
-			if (r === null) return null;
+			if (r === null) return [ null, cancel ];
 			r = createSchema(schemaData).normalize(r);
 		} catch (err) {
 			//this.screen.destroy();
@@ -109,7 +119,7 @@ class ListForm {
 			await this._message(container, err.message);
 			return await this._editValue(container, schemaData, value, options);
 		}
-		return r;
+		return [ r, cancel ];
 	}
 
 	async lineEditor(container, label, defaultValue = '', options = {}) {
@@ -243,14 +253,14 @@ class ListForm {
 			});
 		}
 
-		let r = await this._editObject(container, coordObjSchema, coordObj, { extraKeys });
-		if (r === null) return null;
+		let [ r, cancel ] = await this._editObject(container, coordObjSchema, coordObj, { extraKeys });
+		if (r === null) return [ null, true ];
 		let newValue = [];
 		for (let i = 0; i < maxNumAxes; i++) {
 			let v = r[axisLabels[i].toUpperCase()] || 0;
 			newValue.push(v);
 		}
-		return newValue;
+		return [ newValue, cancel ];
 	}
 
 	async _editMixed(container, schemaData, value = null, options = {}) {
@@ -279,8 +289,8 @@ class ListForm {
 			currentTypeNum || 0
 		);
 		if (selectedTypeNum === null) {
-			if (options.returnDefaultOnCancel === false) return null;
-			return value;
+			if (options.returnDefaultOnCancel === false) return [ null, true ];
+			return [ value, true ];
 		}
 
 		// If changing type, reset value
@@ -298,9 +308,9 @@ class ListForm {
 		if (selectedTypeNum === 3) stSchema = { type: 'array', elements: { type: 'mixed' }, default: value };
 		if (selectedTypeNum === 4) stSchema = { type: 'map', values: { type: 'mixed' }, default: value };
 
-		// Show an editor for each type
-		let newValue = await this._editValue(container, stSchema, value, {});
-		return newValue;
+		// Show an editor
+		let [ newValue, cancel ] = await this._editValue(container, stSchema, value, {});
+		return [ newValue, cancel ];
 	}
 
 	async _editArray(container, schemaData, value = [], options = {}) {
@@ -375,7 +385,7 @@ class ListForm {
 				this.screen.render();
 				return true;
 			} else {
-				let newValue = await this._editValue(container, elementsSchema, elementValue, opts);
+				let [ newValue, cancel ] = await this._editValue(container, elementsSchema, elementValue, opts);
 				if (newValue !== null) {
 					value[selected] = newValue;
 					listBox.setItem(selected, this._getEntryDisplayLabel(selected, value[selected], elementsSchema));
@@ -384,19 +394,21 @@ class ListForm {
 				return true;
 			}
 		});
+		let cancel = false;
 		if (r === null) {
-			if (options.returnDefaultOnCancel === false) return null;
+			cancel = true;
+			if (options.returnDefaultOnCancel === false) return [ null, cancel ];
 			// NOTE: Hitting Esc while editing an object still counts as editing the object if fields
 			// have been modified, unless the object fails validation
 			if (options.normalize) {
 				try {
 					value = options.normalize(value);
 				} catch (e) {
-					return null;
+					return [ null, cancel ];
 				}
 			}
 		}
-		return value;
+		return [ value, cancel ];
 	}
 
 	async _editMap(container, schemaData, value = {}, options = {}) {
@@ -482,7 +494,7 @@ class ListForm {
 				this.screen.render();
 				return true;
 			} else {
-				let newValue = await this._editValue(container, schemaData.values, curValue, opts);
+				let [ newValue, cancel ] = await this._editValue(container, schemaData.values, curValue, opts);
 				if (newValue !== null) {
 					value[key] = newValue;
 					listBox.setItem(selected, this._getEntryDisplayLabel(key, newValue, schemaData.values));
@@ -491,17 +503,19 @@ class ListForm {
 				return true;
 			}
 		});
+		let cancel = false;
 		if (r === null) {
-			if (options.returnDefaultOnCancel === false) return null;
+			cancel = true;
+			if (options.returnDefaultOnCancel === false) return [ null, cancel ];
 			if (options.normalize) {
 				try {
 					value = options.normalize(value);
 				} catch (e) {
-					return null;
+					return [ null, cancel ];
 				}
 			}
 		}
-		return value;
+		return [ value, cancel ];
 	}
 
 	async _editObject(container, schemaData, value = {}, options = {}) {
@@ -578,7 +592,7 @@ class ListForm {
 				this.screen.render();
 				return true;
 			} else {
-				let newValue = await this._editValue(container, schemaData.properties[key], curValue, opts);
+				let [ newValue, cancel ] = await this._editValue(container, schemaData.properties[key], curValue, opts);
 				if (newValue !== null) {
 					value[key] = newValue;
 					listBox.setItem(selected, getEntryLabel(key, newValue));
@@ -587,19 +601,21 @@ class ListForm {
 				return true;
 			}
 		});
+		let cancel = false;
 		if (r === null) {
-			if (options.returnDefaultOnCancel === false) return null;
+			cancel = true;
+			if (options.returnDefaultOnCancel === false) return [ null, cancel ];
 			// NOTE: Hitting Esc while editing an object still counts as editing the object if fields
 			// have been modified, unless the object fails validation
 			if (options.normalize) {
 				try {
 					value = options.normalize(value);
 				} catch (e) {
-					return null;
+					return [ null, cancel ];
 				}
 			}
 		}
-		return value;
+		return [ value, cancel ];
 	}
 
 	async _enumSelector(container, title, values, defaultValue, options = {}) {
@@ -607,8 +623,8 @@ class ListForm {
 		let defaultIdx = (defaultValue === undefined) ? 0 : values.indexOf(defaultValue);
 		if (defaultIdx === -1) defaultIdx = 0;
 		let selectedIdx = await this.selector(container, title, strValues, defaultIdx, options);
-		if (selectedIdx === null || selectedIdx === undefined) return null;
-		return values[selectedIdx];
+		if (selectedIdx === null || selectedIdx === undefined) return [ null, true ];
+		return [ values[selectedIdx], false ];
 	}
 
 	selector(container, title, items, defaultSelected = 0, options = {}, handler = null) {
