@@ -66,7 +66,7 @@ macroMeta({
 // Move to above starting position and start spindle
 push(`G0 Z${start.z + clearance}`);
 push(`G0 X${start.x} Y${start.y}`);
-push(`M3${speed ? ` S${speed}` : ''}`);
+push(`M3${speed ? (' S' + speed) : ''}`);
 if (dwell) push(`G4 P${dwell}`);
 
 // Move to starting position

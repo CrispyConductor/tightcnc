@@ -141,7 +141,7 @@ class ModeControl extends ConsoleUIMode {
 			let macro = macroList[selected];
 			let macroParams = {};
 			if (macro.params && macro.params.type === 'object' && Object.keys(macro.params.properties).length > 0) {
-				macroParams = await new ListForm(this.consoleui).showEditor(null, macro.params);
+				macroParams = await new ListForm(this.consoleui).showEditor(null, macro.params, undefined, { returnDefaultOnCancel: false });
 				if (!macroParams) return;
 			}
 			this.consoleui.client.op('runMacro', { macro: macro.name, params: macroParams })

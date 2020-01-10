@@ -82,7 +82,7 @@ module.exports = {
 	enableDebug: false,
 	debugToStdout: false,
 	consoleui: {
-		logDir: '/tmp/tightcnc-log',
+		logDir: '/tmp/tightcnc-consoleui-log',
 		log: {
 			updateInterval: 250,
 			updateBatchLimit: 200,

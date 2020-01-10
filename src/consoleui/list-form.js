@@ -19,7 +19,7 @@ class ListForm {
 	async showEditor(container, schema, defaultVal, options = {}) {
 		if (!container && this.consoleui) {
 			return await this.consoleui.runInModal(async (c) => {
-				return await this.showEditor(c, schema, defaultVal);
+				return await this.showEditor(c, schema, defaultVal, options);
 			});
 		}
 		if (!Schema.isSchema(schema)) schema = createSchema(schema);
