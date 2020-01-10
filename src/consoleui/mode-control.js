@@ -133,12 +133,18 @@ class ModeControl extends ConsoleUIMode {
 
 	async _macroList() {
 		let macroList = await this.consoleui.runWithWait(async() => {
-			await this.consoleui.client.op('listMacros', {});
+			return await this.consoleui.client.op('listMacros', {});
 		});
-		let selected = await new ListForm(this.consoleui).selector(null, 'Run Macro', macroList);
+		let macroNames = macroList.map((m) => m.name);
+		let selected = await new ListForm(this.consoleui).selector(null, 'Run Macro', macroNames);
 		if (typeof selected === 'number') {
 			let macro = macroList[selected];
-			this.consoleui.client.op('runMacro', { macro: macro, params: {} })
+			let macroParams = {};
+			if (macro.params && macro.params.type === 'object' && Object.keys(macro.params.properties).length > 0) {
+				macroParams = await new ListForm(this.consoleui).showEditor(null, macro.params);
+				if (!macroParams) return;
+			}
+			this.consoleui.client.op('runMacro', { macro: macro.name, params: macroParams })
 				.catch((err) => this.consoleui.clientError('Macro error: ' + err));
 			this.consoleui.showTempMessage('Macro running.');
 		}
