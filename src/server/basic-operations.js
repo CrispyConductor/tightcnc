@@ -43,7 +43,8 @@ class OpSend extends Operation {
 	}
 	async run(params) {
 		if (params.wait) {
-			await this.tightcnc.controller.sendWait(params.line);
+			this.tightcnc.controller.send(params.line);
+			await this.tightcnc.controller.waitSync();
 		} else {
 			this.tightcnc.controller.send(params.line);
 		}
@@ -176,7 +177,8 @@ class OpSetAbsolutePos extends Operation {
 				gcode += ' ' + axis + pos[axisNum];
 			}
 		}
-		await this.tightcnc.controller.sendWait(gcode);
+		await this.tightcnc.controller.send(gcode);
+		await this.tightcnc.controller.waitSync();
 	}
 }
 
@@ -245,7 +247,8 @@ class OpSetOrigin extends Operation {
 				gcode += ' ' + axis + pos[axisNum];
 			}
 		}
-		await this.tightcnc.controller.sendWait(gcode);
+		await this.tightcnc.controller.send(gcode);
+		await this.tightcnc.controller.waitSync();
 	}
 }
 
