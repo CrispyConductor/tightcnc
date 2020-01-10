@@ -227,7 +227,7 @@ class ListForm {
 				hint: [ 'c', 'Use Current Pos' ],
 				keys: [ 'c' ],
 				fn: ({data}) => {
-					let pos = [ 111, 222, 333 ];
+					let pos = this.consoleui.lastStatus.controller.pos;
 					for (let i = 0; i < maxNumAxes && i < pos.length; i++) {
 						if (usedAxes[i]) {
 							let v = pos[i];

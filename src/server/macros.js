@@ -35,6 +35,12 @@ class Macros {
 		return ret;
 	}
 
+	async _getMacroParamsSchema(name) {
+		if (!(name in this.macroCache)) await this._updateMacroCache();
+		if (!this.macroCache[name] || !this.macroCache[name].metadata || !this.macroCache[name].metadata.params) return {};
+		return this.macroCache[name].metadata.params;
+	}
+
 	async _loadMacroCache() {
 		let newMacroCache = {};
 		let fileObjs = await this._listMacroFiles();
@@ -197,7 +203,7 @@ class Macros {
 		return value;
 	}
 
-	_makeMacroEnv(params, options) {
+	async _makeMacroEnv(code, params, options) {
 		let env = {
 			// push gcode function available inside macro.  In gcode processor, pushes onto the gcode processor stream.
 			// Otherwise, sends to controller.  Tracks if the most recent sent line is executed for syncing.
@@ -233,7 +239,15 @@ class Macros {
 
 			macroMeta: () => {} // this function is a no-op in normal operation
 		};
-		for (let key in params) {
+		let meta = await this._loadMacroMetadata(code);
+		let schema = meta && meta.params;
+		let pkeys;
+		if (schema && schema.type === 'object' && schema.properties) {
+			pkeys = Object.keys(schema.properties);
+		} else {
+			pkeys = Object.keys(params);
+		}
+		for (let key of pkeys) {
 			if (!(key in env)) {
 				let value = this._prepMacroParam(params[key], key, env);
 				params[key] = value;
@@ -245,7 +259,7 @@ class Macros {
 
 	async runJS(code, params = {}, options = {}) {
 		if (options.waitSync) code += '\n;await sync();';
-		let env = this._makeMacroEnv(params, options);
+		let env = await this._makeMacroEnv(code, params, options);
 		let envKeys = Object.keys(env);
 		let fnCtorArgs = envKeys.concat([ code ]);
 		let fn = new AsyncFunction(...fnCtorArgs);
