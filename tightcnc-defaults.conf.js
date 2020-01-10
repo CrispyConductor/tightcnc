@@ -41,7 +41,9 @@ module.exports = {
 				clearanceHeight: 2,
 				autoClearance: true,
 				autoClearanceMin: 0.5,
-				probeMinZ: -2
+				probeMinZ: -2,
+				numProbeSamples: 3,
+				extraProbeSampleClearance: 0.4
 			}
 		}
 	},

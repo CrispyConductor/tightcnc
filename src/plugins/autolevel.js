@@ -212,9 +212,24 @@ function startProbeSurface(tightcnc, options) {
 			sendMove(pointPosX, pointPosY, null);
 			if (clearanceZ < currentZ) sendMove(null, null, clearanceZ);
 
-			// Probe down towards the point
-			let tripPos = await tightcnc.controller.probe([ null, null, options.probeMinZ ]);
-			let tripZ = tripPos[2];
+			// Probe down towards the point the requisite number of times
+			let numProbes = options.numProbeSamples || 1;
+			let probesResults = [];
+			for (let i = 0; i < numProbes; i++) {
+				let tripPos = await tightcnc.controller.probe([ null, null, options.probeMinZ ]);
+				let tripZ = tripPos[2];
+				probesResults.push(tripZ);
+				if (i + 1 < numProbes) {
+					// move up small clearance for next sample
+					let smallClearanceZ = clearanceZ;
+					if (options.extraProbeSampleClearance) smallClearanceZ = tripZ + options.extraProbeSampleClearance;
+					sendMove(null, null, smallClearanceZ);
+				}
+			}
+			// Average together the probe results for each sample
+			let tripZ = 0;
+			for (let r of probesResults) tripZ += r;
+			tripZ /= probesResults.length;
 
 			// Add point to list of points
 			slm.addPoint([ pointPosX, pointPosY, tripZ ]);
@@ -344,6 +359,16 @@ class OpProbeSurface extends Operation {
 				type: Number,
 				default: this.config.defaultOptions.probeMinZ,
 				description: 'Minimum Z value to probe toward.  Error if this Z is reached without the probe tripping.'
+			},
+			numProbeSamples: {
+				type: Number,
+				default: this.config.defaultOptions.numProbeSamples,
+				description: 'Number of times to probe for each point'
+			},
+			extraProbeSampleClearance: {
+				type: Number,
+				default: this.config.defaultOptions.extraProbeSampleClearance,
+				description: 'When probing multiple times per point, the clearance to use for all but the first probe'
 			}
 		};
 	}
@@ -601,6 +626,18 @@ class AutolevelConsoleUIJobOption extends JobOption {
 					label: 'Probe Z Cutoff',
 					default: -2,
 					description: 'Minimum Z value to probe toward.  Error if this Z is reached without the probe tripping.'
+				},
+				numProbeSamples: {
+					type: Number,
+					label: 'Samples per point',
+					default: 3,
+					description: 'Number of samples to take per probe point'
+				},
+				extraProbeSampleClearance: {
+					type: Number,
+					label: 'Multi-sample clearance',
+					default: 0.4,
+					description: 'Amount of clearance to use for subsequent probe samples on a point'
 				}
 			}
 		};
