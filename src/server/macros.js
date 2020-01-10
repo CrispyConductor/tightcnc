@@ -325,7 +325,7 @@ class Macros {
 				createSchema(metadata.params).normalize(params);
 			}
 			// Load the macro code
-			let code = this._readFile(this.macroCache[macro].absPath);
+			let code = await this._readFile(this.macroCache[macro].absPath);
 			if (!code) throw new XError(XError.NOT_FOUND, 'Macro ' + macro + ' not found');
 			// Run the macro
 			return await this.runJS(code, params, options);
