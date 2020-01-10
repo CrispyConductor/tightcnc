@@ -90,6 +90,10 @@ class ListForm {
 					}
 				};
 				r = await this.lineEditor(container, (schemaData.title || schemaData.label || options.key || 'Value') + ':', value, options);
+			} else if (schemaData.type === 'mixed') {
+				r = await this._editMixed(container, schemaData, value, options);
+			} else if (schemaData.type === 'map') {
+				r = await this._editMap(container, schemaData, value || {}, options);
 			} else {
 				throw new Error('Unsupported edit schema type');
 			}
@@ -184,6 +188,7 @@ class ListForm {
 	}
 
 	_getEntryDisplayLabel(key, value, schemaData) {
+		if (!schemaData) schemaData = {};
 		if (value === null || value === undefined) value = schemaData.default;
 		if (value === undefined) value = null;
 		let keyStr = '' + (schemaData.label || schemaData.description || key);
@@ -194,6 +199,56 @@ class ListForm {
 			keyStr += ': ' + value;
 		}
 		return keyStr;
+	}
+
+	async _editMixed(container, schemaData, value = null, options = {}) {
+		// Show type selector
+		let currentTypeNum;
+		if (typeof value === 'string') {
+			currentTypeNum = 0;
+		} else if (typeof value === 'boolean') {
+			currentTypeNum = 1;
+		} else if (typeof value === 'number') {
+			currentTypeNum = 2;
+		} else if (Array.isArray(value)) {
+			currentTypeNum = 3;
+		} else if (value && typeof value === 'object') {
+			currentTypeNum = 4;
+		} else {
+			value = null;
+			currentTypeNum = null;
+		}
+		const typeLabelList = [ 'String', 'True/False', 'Number', 'List', 'Table (Object/Dict)' ];
+		let currentType = (currentTypeNum === null) ? null : typeLabelList[currentTypeNum];
+		let selectedTypeNum = await this.selector(
+			container,
+			'Edit As:' + (currentType ? (' (Currently ' + currentType + ')') : ''),
+			typeLabelList,
+			currentTypeNum || 0
+		);
+		if (selectedTypeNum === null) {
+			if (options.returnDefaultOnCancel === false) return null;
+			return value;
+		}
+
+		// If changing type, reset value
+		if (selectedTypeNum === 0 && typeof value !== 'string') value = '';
+		if (selectedTypeNum === 1 && typeof value !== 'boolean') value = false;
+		if (selectedTypeNum === 2 && typeof value !== 'number') value = 0;
+		if (selectedTypeNum === 3 && !Array.isArray(value)) value = [];
+		if (selectedTypeNum === 4 && (!value || typeof value !== 'object')) value = {};
+
+		// Make the subschema for the next type
+		let stSchema = null;
+		if (selectedTypeNum === 0) stSchema = { type: 'string', default: value };
+		if (selectedTypeNum === 1) stSchema = { type: 'boolean', default: value };
+		if (selectedTypeNum === 2) stSchema = { type: 'number', default: value };
+		if (selectedTypeNum === 3) stSchema = { type: 'array', elements: { type: 'mixed' }, default: value };
+		if (selectedTypeNum === 4) stSchema = { type: 'map', values: { type: 'mixed' }, default: value };
+
+		// Show an editor for each type
+		let newValue = await this._editValue(container, stSchema, value, {});
+		return newValue;
 	}
 
 	async _editArray(container, schemaData, value = [], options = {}) {
@@ -281,6 +336,111 @@ class ListForm {
 			if (options.returnDefaultOnCancel === false) return null;
 			// NOTE: Hitting Esc while editing an object still counts as editing the object if fields
 			// have been modified, unless the object fails validation
+			if (options.normalize) {
+				try {
+					value = options.normalize(value);
+				} catch (e) {
+					return null;
+				}
+			}
+		}
+		return value;
+	}
+
+	async _editMap(container, schemaData, value = {}, options = {}) {
+		value = objtools.deepCopy(value);
+		let title = schemaData.title || schemaData.label || options.key || 'Edit Mapping';
+
+		let mapKeys = Object.keys(value); // used to ensure consistent ordering
+		let keyStrs = mapKeys.map((k) => {
+			return this._getEntryDisplayLabel(k, value[k]);
+		});
+		keyStrs.push(schemaData.doneLabel || '[Done]');
+
+		options = objtools.deepCopy(options);
+		options.keys = [
+			{
+				hint: [ '+',  'Add Key' ],
+				keys: [ '+', '=' ],
+				fn: ({ listBox, selected }) => {
+					this.lineEditor(container, 'New Key', '')
+						.then((key) => {
+							if (!key) return;
+							if (key in value) {
+								this._message(container, 'Key already exists');
+								return;
+							}
+							mapKeys.push(key);
+							value[key] = (schemaData.values.default === undefined) ? null : schemaData.values.default;
+							listBox.insertItem(mapKeys.length - 1, this._getEntryDisplayLabel(key, value[key], schemaData.values));
+							this.screen.render();
+						})
+						.catch((err) => {
+							this._message(container, '' + err);
+						});
+				}
+			},
+			{
+				hint: [ 'Del',  'Remove' ],
+				keys: [ 'delete' ],
+				fn: ({ listBox, selected }) => {
+					if (selected >= mapKeys.length) return;
+					let removedKey = mapKeys[selected];
+					mapKeys.splice(selected, 1);
+					delete value[removedKey];
+					listBox.removeItem(selected);
+					this.screen.render();
+				}
+			}
+		];
+
+		let r = await this.selector(container, title, keyStrs, 0, options, async (selected, listBox) => {
+			if (selected === mapKeys.length) {
+				if (options.normalize) {
+					try {
+						value = options.normalize(value);
+					} catch (err) {
+						this._message(container, err.message);
+						return true;
+					}
+				}
+				return false;
+			}
+			let key = mapKeys[selected];
+			let curValue = value[key];
+			if (curValue === null || curValue === undefined) curValue = schemaData.values.default;
+			let opts = objtools.deepCopy(schemaData.formOptions || {});
+			opts.key = key;
+			if (schemaData.values.actionFn) {
+				try {
+					await schemaData.values.actionFn({
+						selectedIndex: selected,
+						selectedKey: key,
+						selectedCurValue: curValue,
+						opts,
+						listBox,
+						obj: value
+					});
+				} catch (err) {
+					await this._message(container, err.message);
+				}
+				for (let i = 0; i < mapKeys.length; i++) {
+					listBox.setItem(i, this._getEntryDisplayLabel(mapKeys[i], value[mapKeys[i]]));
+				}
+				this.screen.render();
+				return true;
+			} else {
+				let newValue = await this._editValue(container, schemaData.values, curValue, opts);
+				if (newValue !== null) {
+					value[key] = newValue;
+					listBox.setItem(selected, this._getEntryDisplayLabel(key, newValue));
+				}
+				this.screen.render();
+				return true;
+			}
+		});
+		if (r === null) {
+			if (options.returnDefaultOnCancel === false) return null;
 			if (options.normalize) {
 				try {
 					value = options.normalize(value);
@@ -598,7 +758,15 @@ let schema = {
 			prop1: String,
 			prop2: Number
 		},
-		artest: { type: 'array', elements: Number, default: [ 1, 2, 3 ] }
+		artest: { type: 'array', elements: Number, default: [ 1, 2, 3 ] },
+		maptest: {
+			type: 'map',
+			values: String,
+			default: { foo: 'bar', biz: 'baz' }
+		},
+		mixed: {
+			type: 'mixed'
+		}
 	}
 };
 
