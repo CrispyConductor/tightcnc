@@ -409,10 +409,10 @@ class MacroGcodeSourceStream extends zstreams.Readable {
 	}
 
 	_read() {
-		for (let w of this.pushReadWaiters) {
-			w.resolve();
+		if (this.pushReadWaiter) {
+			this.pushReadWaiter.resolve();
+			this.pushReadWaiter = null;
 		}
-		this.pushReadWaiters = [];
 	}
 
 }

@@ -233,7 +233,7 @@ class ConsoleUI extends EventEmitter {
 				}
 			}
 			return {
-				macro,
+				macro: macro.name,
 				macroParams
 			};
 		} else {
