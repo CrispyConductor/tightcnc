@@ -472,7 +472,7 @@ class AutolevelConsoleUIJobOption extends JobOption {
 		this.consoleui.screen.grabKeys = true;
 		
 		const updateProbeInfo = (probeStatus) => {
-			probeInfoBox.content = 'Probing surface ...\nState: ' + probeStatus.state + '\nPoint ' + probeStatus.currentProbePoint + '/' + probeStatus.probePoints + ' (' + Math.floor(probeStatus.percentComplete) + '%)';
+			probeInfoBox.content = 'Probing surface ...\nState: ' + probeStatus.state + '\nPoint ' + (probeStatus.currentProbePoint + 1) + '/' + probeStatus.probePoints + ' (' + Math.floor(probeStatus.percentComplete) + '%)';
 			if (probeStatus.state === 'error' && probeStatus.error) probeInfoBox.content += '\nError: ' + probeStatus.error;
 			this.consoleui.render();
 		};
