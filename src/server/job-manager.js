@@ -85,6 +85,8 @@ class JobManager {
 	 * @method startJob
 	 * @param {Object} jobOptions
 	 *   @param {String} jobOptions.filename - The input gcode file for the job.
+	 *   @param {Mixed} jobOptions.macro - Instead of filename, get the gcode from a generator macro
+	 *   @param {Object} jobOptions.macroParams - Parameters for the macro if running job from macro
 	 *   @param {Object[]} jobOptions.gcodeProcessors - The set of gcode processors to apply, in order, along with
 	 *     options for each.
 	 *     @param {String} options.gcodeProcessors.#.name - Name of gcode processor.
@@ -104,7 +106,7 @@ class JobManager {
 		// Set up the gcode processors for this job
 		let origJobOptions = jobOptions;
 		jobOptions = objtools.deepCopy(jobOptions);
-		jobOptions.filename = this.tightcnc.getFilename(jobOptions.filename, 'data', true);
+		if (jobOptions.filename) jobOptions.filename = this.tightcnc.getFilename(jobOptions.filename, 'data', true);
 		if (jobOptions.rawFile) {
 			delete jobOptions.gcodeProcessors;
 		} else {
@@ -147,6 +149,8 @@ class JobManager {
 		this.tightcnc.debug('startJob getGcodeSourceStream');
 		let source = this.tightcnc.getGcodeSourceStream({
 			filename: jobOptions.filename,
+			macro: jobOptions.macro,
+			macroParams: jobOptions.macroParams,
 			gcodeProcessors: jobOptions.gcodeProcessors,
 			rawStrings: jobOptions.rawFile,
 			job: job
@@ -205,7 +209,7 @@ class JobManager {
 		this.tightcnc.debug('Begin dryRunJob');
 		let origJobOptions = jobOptions;
 		jobOptions = objtools.deepCopy(jobOptions);
-		jobOptions.filename = this.tightcnc.getFilename(jobOptions.filename, 'data', true);
+		if (jobOptions.filename) jobOptions.filename = this.tightcnc.getFilename(jobOptions.filename, 'data', true);
 		if (outputFile) outputFile = this.tightcnc.getFilename(outputFile, 'data', true);
 		if (jobOptions.rawFile) {
 			delete jobOptions.gcodeProcessors;
@@ -232,6 +236,8 @@ class JobManager {
 		this.tightcnc.debug('Dry run getGcodeSourceStream');
 		let source = this.tightcnc.getGcodeSourceStream({
 			filename: jobOptions.filename,
+			macro: jobOptions.macro,
+			macroParams: jobOptions.macroParams,
 			gcodeProcessors: jobOptions.gcodeProcessors,
 			rawStrings: jobOptions.rawFile,
 			dryRun: true,

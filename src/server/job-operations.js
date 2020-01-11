@@ -2,18 +2,37 @@ const Operation = require('./operation');
 const fs = require('fs');
 const path = require('path');
 const objtools = require('objtools');
-
+const commonSchema = require('common-schema');
+const XError = require('xerror');
 
 const jobOptionsSchema = {
-	filename: { type: String, required: true, description: 'Filename of gcode to run' },
-	rawFile: { type: Boolean, default: false, description: 'Do not process the gcode in the file at all.  Also disables stats.' },
-	gcodeProcessors: [
-		{
-			name: { type: String, description: 'Name of gcode processor', required: true },
-			options: { type: 'mixed', description: 'Options to pass to the gcode processor', default: {} },
-			order: { type: 'number', description: 'Optional order number for gcode processor position in chain' }
-		}
-	]
+	type: 'object',
+	properties: {
+		filename: { type: String, description: 'Filename of gcode to run' },
+		macro: {
+			type: String,
+			description: 'Name of generator macro to use as gcode source',
+			validate: (str) => {
+				if (str.indexOf(';') !== -1) throw new commonSchema.FieldError('invalid', 'Cannot supply raw javascript');
+			}
+		},
+		macroParams: {
+			type: 'mixed',
+			description: 'Macro parameters, if macro is used'
+		},
+		rawFile: { type: Boolean, default: false, description: 'Do not process the gcode in the file at all.  Also disables stats.' },
+		gcodeProcessors: [
+			{
+				name: { type: String, description: 'Name of gcode processor', required: true },
+				options: { type: 'mixed', description: 'Options to pass to the gcode processor', default: {} },
+				order: { type: 'number', description: 'Optional order number for gcode processor position in chain' }
+			}
+		]
+	},
+	validate(obj) {
+		if (!obj.filename && !obj.macro) throw new commonSchema.FieldError('invalid', 'Must supply either filename or macro');
+		if (obj.filename && obj.macro) throw new commonSchema.FieldError('invalid', 'Cannot supply both filename and macro');
+	}
 };
 
 
@@ -25,6 +44,8 @@ class OpStartJob extends Operation {
 	async run(params) {
 		let jobOptions = {
 			filename: this.tightcnc.getFilename(params.filename, 'data'),
+			macro: params.macro,
+			macroParams: params.macroParams,
 			gcodeProcessors: params.gcodeProcessors,
 			rawFile: params.rawFile
 		};
@@ -41,6 +62,8 @@ class OpJobDryRun extends Operation {
 	async run(params) {
 		let jobOptions = {
 			filename: this.tightcnc.getFilename(params.filename, 'data'),
+			macro: params.macro,
+			macroParams: params.macroParams,
 			gcodeProcessors: params.gcodeProcessors,
 			rawFile: params.rawFile
 		};

@@ -80,9 +80,9 @@ for (let z = start.z; z >= end.z; ) {
 		push(`G1 Y${y} F${feed}`);
 		// Alternate (zig zag)
 		if (yctr % 2 === 0) {
-			push(`G1 X${end.x} F${feed}`);
+			await push(`G1 X${end.x} F${feed}`);
 		} else {
-			push(`G1 X${start.x} F${feed}`);
+			await push(`G1 X${start.x} F${feed}`);
 		}
 		yctr++;
 		if (y >= end.y) break;

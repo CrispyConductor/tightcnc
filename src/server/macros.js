@@ -4,6 +4,7 @@ const pasync = require('pasync');
 const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
 const fs = require('fs');
 const path = require('path');
+const zstreams = require('zstreams');
 const { createSchema } = require('common-schema');
 
 class Macros {
@@ -355,7 +356,68 @@ class Macros {
 		}
 	}
 
+	generatorMacroStream(macro, params) {
+		return new MacroGcodeSourceStream(this, macro, params);
+	}
+
 }
+
+
+
+
+
+
+class MacroGcodeSourceStream extends zstreams.Readable {
+
+	constructor(macros, macro, macroParams) {
+		super({ objectMode: true });
+		this.pushReadWaiter = null;
+	
+		let gotChainError = false;
+		this.on('chainerror', (err) => {
+			gotChainError = true;
+			if (this.pushReadWaiter) {
+				this.pushReadWaiter.reject(err);
+				this.pushReadWaiter = null;
+			}
+		});
+
+		macros.runMacro(macro, macroParams, {
+			push: async (gline) => {
+				let r = this.push(gline);
+				if (!r) {
+					// wait until _read is called
+					if (!this.pushReadWaiter) {
+						this.pushReadWaiter = pasync.waiter();
+					}
+					await this.pushReadWaiter.promise;
+				}
+			},
+			sync: async() => {
+				throw new XError(XError.UNSUPPORTED_OPERATION, 'sync() not supported in generator macros');
+			}
+
+		})
+			.then(() => {
+				this.push(null);
+			})
+			.catch((err) => {
+				if (!gotChainError) {
+					this.emit('error', new XError(XError.INTERNAL_ERROR, 'Error running generator macro', err));
+				}
+			});
+	}
+
+	_read() {
+		for (let w of this.pushReadWaiters) {
+			w.resolve();
+		}
+		this.pushReadWaiters = [];
+	}
+
+}
+
+
 
 module.exports = Macros;
 

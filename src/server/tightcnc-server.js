@@ -219,6 +219,8 @@ class TightCNCServer extends EventEmitter {
 	 * @param {Object} options
 	 *   @param {String} options.filename - Filename to read source gcode from.
 	 *   @param {String[]} options.data - Array of gcode line strings.  Can be supplied instead of filename.
+	 *   @param {Mixed} options.macro - Use a macro as a source.  Can be supplied instead of filename.
+	 *   @param {Object} options.macroParams - Parameters when using options.macro
 	 *   @param {Object[]} options.gcodeProcessors - The set of gcode processors to apply, in order, along with
 	 *     options for each.  These objects are modified by this function to add the instantiated gcode processor
 	 *     instances under the key 'inst' (unless the 'inst' key already exists, in which case it is used).
@@ -240,9 +242,19 @@ class TightCNCServer extends EventEmitter {
 				let filename = options.filename;
 				filename = this.getFilename(filename, 'data', true);
 				return zstreams.fromFile(filename).pipe(new zstreams.SplitStream());
+			} else if (options.macro) {
+				return this.macros.generatorMacroStream(options.macro, options.macroParams || {}).through((gline) => gline.toString());
 			} else {
 				return zstreams.fromArray(options.data);
 			}
+		}
+
+		// 
+		let macroStreamFn = null;
+		if (options.macro) {
+			macroStreamFn = () => {
+				return this.macros.generatorMacroStream(options.macro, options.macroParams || {});
+			};
 		}
 
 		// Sort gcode processors
@@ -272,7 +284,7 @@ class TightCNCServer extends EventEmitter {
 				gcodeProcessorInstances.push(inst);
 			}
 		}
-		return GcodeProcessor.buildProcessorChain(options.filename || options.data, gcodeProcessorInstances, false);
+		return GcodeProcessor.buildProcessorChain(options.filename || options.data || macroStreamFn, gcodeProcessorInstances, false);
 	}
 
 	async runMacro(macro, params = {}, options = {}) {
@@ -280,6 +292,10 @@ class TightCNCServer extends EventEmitter {
 	}
 
 }
+
+
+
+
 
 module.exports = TightCNCServer;
 
