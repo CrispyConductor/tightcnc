@@ -10,6 +10,8 @@ class ModeNewJob extends ConsoleUIMode {
 	constructor(consoleui) {
 		super(consoleui);
 		this.jobFilename = null;
+		this.jobMacro = null;
+		this.jobMacroParams = {};
 		this.jobOptionInstances = {};
 		this.dryRunResults = null;
 	}
@@ -17,6 +19,7 @@ class ModeNewJob extends ConsoleUIMode {
 	updateJobInfoText() {
 		let jobInfoStr = '';
 		if (this.jobFilename) jobInfoStr += 'File: ' + this.jobFilename + '\n';
+		if (this.jobMacro) jobInfoStr += 'Generator Macro: ' + this.jobMacro + '\n';
 		
 		for (let jobOptionName in this.jobOptionInstances) {
 			let inst = this.jobOptionInstances[jobOptionName];
@@ -80,6 +83,8 @@ class ModeNewJob extends ConsoleUIMode {
 				fileListBox.once('select', () => {
 					let selectedFile = files[fileListBox.selected];
 					this.jobFilename = selectedFile;
+					this.jobMacro = null;
+					this.jobMacroParams = {};
 					this.dryRunResults = null;
 					this.box.remove(fileListBox);
 					this.updateJobInfoText();
@@ -94,6 +99,22 @@ class ModeNewJob extends ConsoleUIMode {
 				this.consoleui.clientError(err);
 				this.consoleui.hideWaitingBox();
 			});
+	}
+
+	selectJobMacro() {
+		const macroFilterFn = (m) => {
+			return /^generator-/.test(m);
+		};
+		this.consoleui.macroSelector(null, null, macroFilterFn)
+			.then((minfo) => {
+				if (!minfo) return;
+				this.jobMacro = minfo.macro;
+				this.jobMacroParams = minfo.macroParams;
+				this.jobFilename = null;
+				this.dryRunResults = null;
+				this.updateJobInfoText();
+			})
+			.catch((err) => this.consoleui.clientError(err));
 	}
 
 	selectJobOption() {
@@ -205,6 +226,8 @@ class ModeNewJob extends ConsoleUIMode {
 						this.consoleui.hideWaitingBox();
 						this.consoleui.showTempMessage('File uploaded.');
 						this.jobFilename = fileBaseName;
+						this.jobMacro = null;
+						this.jobMacroParams = {};
 						this.dryRunResults = null;
 						this.updateJobInfoText();
 					})
@@ -221,7 +244,11 @@ class ModeNewJob extends ConsoleUIMode {
 	makeJobOptionsObj() {
 		let obj = {};
 		if (this.jobFilename) obj.filename = this.jobFilename;
-		if (!obj.filename) throw new XError(XError.INVALID_ARGUMENT, 'No filename specified');
+		else if (this.jobMacro) {
+			obj.macro = this.jobMacro;
+			obj.macroParams = this.jobMacroParams;
+		}
+		if (!obj.filename && !obj.macro) throw new XError(XError.INVALID_ARGUMENT, 'No filename specified');
 		for (let key in this.jobOptionInstances) {
 			this.jobOptionInstances[key].addToJobOptions(obj);
 		}
@@ -317,6 +344,8 @@ class ModeNewJob extends ConsoleUIMode {
 
 	resetJobInfo() {
 		this.jobFilename = null;
+		this.jobMacro = null;
+		this.jobMacroParams = null;
 		this.dryRunResults = null;
 		this.jobOptionInstances = {};
 		this.updateJobInfoText();
@@ -349,6 +378,7 @@ class ModeNewJob extends ConsoleUIMode {
 		this.registerModeKey([ 'escape' ], [ 'Esc' ], 'Home', () => this.consoleui.exitMode());
 		this.registerModeKey([ 'f' ], [ 'f' ], 'Select File', () => this.selectJobFile());
 		this.registerModeKey([ 'u' ], [ 'u' ], 'Upload File', () => this.uploadFile());
+		this.registerModeKey([ 'g' ], [ 'g' ], 'Generator', () => this.selectJobMacro());
 		this.registerModeKey([ 'o' ], [ 'o' ], 'Job Option', () => this.selectJobOption());
 		this.registerModeKey([ 'r' ], [ 'r' ], 'Reset', () => this.resetJobInfo());
 		this.registerModeKey([ 'd' ], [ 'd' ], 'Dry Run', () => this.jobDryRun());

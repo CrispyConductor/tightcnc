@@ -526,7 +526,7 @@ class AutolevelConsoleUIJobOption extends JobOption {
 					type: 'mixed',
 					label: '[From Job]',
 					actionFn: async (info) => {
-						if (!this.newJobMode.jobFilename) throw new Error('No job filename configured');
+						if (!this.newJobMode.jobFilename && !this.newJobMode.jobMacro) throw new Error('No job filename configured');
 						let dryRunResults = await this.consoleui.runWithWait(async () => {
 							return await this.consoleui.client.op('jobDryRun', this.newJobMode.makeJobOptionsObj());
 						}, 'Processing job ...');

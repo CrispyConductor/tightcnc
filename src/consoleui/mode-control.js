@@ -133,28 +133,11 @@ class ModeControl extends ConsoleUIMode {
 	}
 
 	async _macroList() {
-		let macroList = await this.consoleui.runWithWait(async() => {
-			return await this.consoleui.client.op('listMacros', {});
-		});
-		let macroNames = macroList.map((m) => m.name);
-		let selected = await new ListForm(this.consoleui).selector(null, 'Run Macro', macroNames);
-		if (typeof selected === 'number') {
-			let macro = macroList[selected];
-			let macroParams = {};
-			if (macro.params && macro.params.type === 'object' && Object.keys(macro.params.properties).length > 0) {
-				let form = new ListForm(this.consoleui);
-				macroParams = await form.showEditor(null, macro.params, this.macroParamCache[macro] || macro.params.default || {}, { returnValueOnCancel: true });
-				if (form.editorCancelled) {
-					if (macroParams) this.macroParamCache[macro] = macroParams;
-					return;
-				} else {
-					if (!macroParams) return;
-				}
-			}
-			this.consoleui.client.op('runMacro', { macro: macro.name, params: macroParams })
-				.catch((err) => this.consoleui.clientError('Macro error: ' + err));
-			this.consoleui.showTempMessage('Macro running.');
-		}
+		let info = await this.consoleui.macroSelector(null, this.macroParamCache);
+		if (!info) return;
+		this.consoleui.client.op('runMacro', { macro: info.macro, params: info.macroParams })
+			.catch((err) => this.consoleui.clientError('Macro error: ' + err));
+		this.consoleui.showTempMessage('Macro running.');
 	}
 
 	_refreshText() {

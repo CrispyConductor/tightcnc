@@ -5,6 +5,7 @@ const EventEmitter = require('events');
 const fs = require('fs');
 const path = require('path');
 const mkdirp = require('mkdirp');
+const ListForm = require('./list-form');
 
 class ConsoleUI extends EventEmitter {
 
@@ -205,6 +206,39 @@ class ConsoleUI extends EventEmitter {
 		this.screen.grabKeys = origGrabKeys;
 		this.screen.render();
 		return r;
+	}
+
+	async macroSelector(container = null, macroParamMap = null, macroFilterFn = null) {
+		let macroList = await this.runWithWait(async() => {
+			return await this.client.op('listMacros', {});
+		});
+		if (macroFilterFn) {
+			macroList = macroList.filter((m) => {
+				return macroFilterFn(m.name);
+			});
+		}
+		let macroNames = macroList.map((m) => m.name);
+		let selected = await new ListForm(this).selector(container, 'Run Macro', macroNames);
+		if (typeof selected === 'number') {
+			let macro = macroList[selected];
+			let macroParams = {};
+			if (macro.params && macro.params.type === 'object' && Object.keys(macro.params.properties).length > 0) {
+				let form = new ListForm(this);
+				macroParams = await form.showEditor(container, macro.params, (macroParamMap && macroParamMap[macro]) || macro.params.default || {}, { returnValueOnCancel: true });
+				if (form.editorCancelled) {
+					if (macroParams && macroParamMap) macroParamMap[macro] = macroParams;
+					return null;
+				} else {
+					if (!macroParams) return null;
+				}
+			}
+			return {
+				macro,
+				macroParams
+			};
+		} else {
+			return null;
+		}
 	}
 
 

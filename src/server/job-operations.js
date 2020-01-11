@@ -14,6 +14,7 @@ const jobOptionsSchema = {
 			description: 'Name of generator macro to use as gcode source',
 			validate: (str) => {
 				if (str.indexOf(';') !== -1) throw new commonSchema.FieldError('invalid', 'Cannot supply raw javascript');
+				if (!/^generator-/.test(str)) throw new commonSchema.FieldError('invalid', 'Macro name must begin with generator-');
 			}
 		},
 		macroParams: {
