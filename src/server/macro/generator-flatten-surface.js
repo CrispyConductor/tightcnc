@@ -1,4 +1,4 @@
-macroMeta({
+macroMeta(mergeParams({
 	start: {
 		type: 'array',
 		elements: { type: 'number', default: 0 },
@@ -33,10 +33,6 @@ macroMeta({
 		required: true,
 		description: 'Downward feed rate'
 	},
-	speed: {
-		type: 'number',
-		description: 'Spindle speed'
-	},
 	cutterDiameter: {
 		type: 'number',
 		default: 3.12,
@@ -49,25 +45,19 @@ macroMeta({
 		required: true,
 		description: 'Overlap fraction'
 	},
-	dwell: {
-		type: 'number',
-		default: 5,
-		required: true,
-		description: 'Dwell time after spindle start'
-	},
 	clearance: {
 		type: 'number',
 		default: 2,
 		required: true,
 		description: 'Clearance amount over start Z position'
 	}
-});
+}, 'begin-generator', 'end-generator'));
 
 // Move to above starting position and start spindle
 push(`G0 Z${start.z + clearance}`);
 push(`G0 X${start.x} Y${start.y}`);
-push(`M3${speed ? (' S' + speed) : ''}`);
-if (dwell) push(`G4 P${dwell}`);
+
+await runMacro('begin-generator', allparams);
 
 // Move to starting position
 push(`G1 Z${start.z} F${downFeed}`);
@@ -97,6 +87,5 @@ for (let z = start.z; z >= end.z; ) {
 // Move back to clearance position and stop spindle
 push(`G0 Z${start.z + clearance}`);
 push(`G0 X${start.x} Y${start.y}`);
-push(`M5`);
 
-
+await runMacro('end-generator', allparams);

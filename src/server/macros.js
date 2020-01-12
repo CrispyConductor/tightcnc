@@ -36,6 +36,11 @@ class Macros {
 		return ret;
 	}
 
+	getMacroParams(name) {
+		if (!this.macroCache[name]) throw new XError(XError.NOT_FOUND, 'Macro ' + name + ' not found');
+		return (this.macroCache[name].metadata && this.macroCache[name].metadata.params) || {};
+	}
+
 	async _getMacroParamsSchema(name) {
 		if (!(name in this.macroCache)) await this._updateMacroCache();
 		if (!this.macroCache[name] || !this.macroCache[name].metadata || !this.macroCache[name].metadata.params) return {};
@@ -102,7 +107,8 @@ class Macros {
 	}
 
 	async _listMacroFiles() {
-		let dirs = [ this.tightcnc.getFilename(null, 'macro', false, true, true), path.join(__dirname, 'macro') ];
+		// later directories in this list take precedence in case of duplicate names
+		let dirs = [ path.join(__dirname, 'macro'), this.tightcnc.getFilename(null, 'macro', false, true, true) ];
 		let ret = [];
 		for (let dir of dirs) {
 			try {
@@ -233,6 +239,24 @@ class Macros {
 				return await this.tightcnc.runOperation(name, params);
 			},
 
+			runMacro: async(macro, params = {}) => {
+				await this.runMacro(macro, params, options);
+			},
+
+			mergeParams: (ourParams, ...otherMacroNames) => {
+				for (let name of otherMacroNames) {
+					let otherParams = this.getMacroParams(name);
+					if (otherParams) {
+						for (let key in otherParams) {
+							if (!(key in ourParams)) {
+								ourParams[key] = objtools.deepCopy(otherParams[key]);
+							}
+						}
+					}
+				}
+				return ourParams;
+			},
+
 			tightcnc: this.tightcnc,
 			gcodeProcessor: options.gcodeProcessor,
 			controller: this.tightcnc.controller,
@@ -255,6 +279,7 @@ class Macros {
 				env[key] = value;
 			}
 		}
+		env.allparams = params;
 		return env;
 	}
 
@@ -337,7 +362,9 @@ class Macros {
 			let metadata = this.macroCache[macro].metadata;
 			// Validate params
 			if (metadata.params) {
-				createSchema(metadata.params).normalize(params);
+				// TODO: Make this ignore extra parameters
+				params = objtools.deepCopy(params);
+				createSchema(metadata.params).normalize(params, { removeUnknownFields: true });
 			}
 			// Load the macro code
 			let code = await this._readFile(this.macroCache[macro].absPath);
