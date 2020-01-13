@@ -11,6 +11,7 @@
     "tightcnc-server": "./bin/tightcnc-server.js",
     "tightcnc-consoleui": "./bin/tightcnc-consoleui.js"
   },
+  "main": "src/index.js",
   "dependencies": {
     "blessed": "^0.1.81",
     "common-schema": "^2.0.2",
