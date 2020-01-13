@@ -5,6 +5,7 @@ const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
 const fs = require('fs');
 const path = require('path');
 const zstreams = require('zstreams');
+const objtools = require('objtools');
 const { createSchema } = require('common-schema');
 
 class Macros {
@@ -38,13 +39,16 @@ class Macros {
 
 	getMacroParams(name) {
 		if (!this.macroCache[name]) throw new XError(XError.NOT_FOUND, 'Macro ' + name + ' not found');
-		return (this.macroCache[name].metadata && this.macroCache[name].metadata.params) || {};
-	}
-
-	async _getMacroParamsSchema(name) {
-		if (!(name in this.macroCache)) await this._updateMacroCache();
-		if (!this.macroCache[name] || !this.macroCache[name].metadata || !this.macroCache[name].metadata.params) return {};
-		return this.macroCache[name].metadata.params;
+		let metadata = this.macroCache[name].metadata;
+		if (!metadata) return null;
+		if (!metadata.params && !metadata.mergeParams) return null;
+		let params = objtools.deepCopy(metadata.params || {});
+		if (metadata.mergeParams) {
+			let otherMacros = metadata.mergeParams;
+			if (!Array.isArray(otherMacros)) otherMacros = [ otherMacros ];
+			this._mergeParams(params, ...otherMacros);
+		}
+		return params;
 	}
 
 	async _loadMacroCache() {
@@ -165,8 +169,7 @@ class Macros {
 
 		// Construct the function to call and the macroMeta function
 		let fn = new AsyncFunction('tightcnc', 'macroMeta', code);
-		const macroMeta = (macroParams) => {
-			let metadata = { params: macroParams };
+		const macroMeta = (metadata) => {
 			throw { metadata, isMacroMetadata: true };
 		};
 
@@ -210,6 +213,20 @@ class Macros {
 		return value;
 	}
 
+	_mergeParams(ourParams, ...otherMacroNames) {
+		for (let name of otherMacroNames) {
+			let otherParams = this.getMacroParams(name);
+			if (otherParams) {
+				for (let key in otherParams) {
+					if (!(key in ourParams)) {
+						ourParams[key] = objtools.deepCopy(otherParams[key]);
+					}
+				}
+			}
+		}
+		return ourParams;
+	}
+
 	async _makeMacroEnv(code, params, options) {
 		let env = {
 			// push gcode function available inside macro.  In gcode processor, pushes onto the gcode processor stream.
@@ -241,20 +258,6 @@ class Macros {
 
 			runMacro: async(macro, params = {}) => {
 				await this.runMacro(macro, params, options);
-			},
-
-			mergeParams: (ourParams, ...otherMacroNames) => {
-				for (let name of otherMacroNames) {
-					let otherParams = this.getMacroParams(name);
-					if (otherParams) {
-						for (let key in otherParams) {
-							if (!(key in ourParams)) {
-								ourParams[key] = objtools.deepCopy(otherParams[key]);
-							}
-						}
-					}
-				}
-				return ourParams;
 			},
 
 			tightcnc: this.tightcnc,
@@ -359,12 +362,10 @@ class Macros {
 			// Get the macro metadata
 			await this._updateMacroCacheOne(macro);
 			if (!this.macroCache[macro]) throw new XError(XError.NOT_FOUND, 'Macro ' + macro + ' not found');
-			let metadata = this.macroCache[macro].metadata;
-			// Validate params
-			if (metadata.params) {
-				// TODO: Make this ignore extra parameters
-				params = objtools.deepCopy(params);
-				createSchema(metadata.params).normalize(params, { removeUnknownFields: true });
+			// Normalize the params
+			let paramsSchema = this.getMacroParams(macro);
+			if (paramsSchema) {
+				createSchema(paramsSchema).normalize(params, { removeUnknownFields: true });
 			}
 			// Load the macro code
 			let code = await this._readFile(this.macroCache[macro].absPath);

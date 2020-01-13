@@ -1,4 +1,4 @@
-macroMeta({
+macroMeta({ params: {
 	spindle: {
 		type: 'boolean',
 		default: true,
@@ -15,7 +15,7 @@ macroMeta({
 		default: false,
 		description: 'Mist coolant'
 	}
-});
+} });
 
 if (spindle) push('M5');
 if (floodCoolant || mistCoolant) push('M9');

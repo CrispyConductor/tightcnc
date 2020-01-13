@@ -1,57 +1,60 @@
-macroMeta(mergeParams({
-	start: {
-		type: 'array',
-		elements: { type: 'number', default: 0 },
-		default: [ 0, 0, 0 ],
-		required: true,
-		isCoordinates: true,
-		description: 'Starting position for surface clear'
+macroMeta({
+	params: {
+		start: {
+			type: 'array',
+			elements: { type: 'number', default: 0 },
+			default: [ 0, 0, 0 ],
+			required: true,
+			isCoordinates: true,
+			description: 'Starting position for surface clear'
+		},
+		end: {
+			type: 'array',
+			elements: { type: 'number', default: 0 },
+			default: [ 0, 0, 0 ],
+			required: true,
+			isCoordinates: true,
+			description: 'Ending position for surface clear'
+		},
+		passDepth: {
+			type: 'number',
+			default: 1,
+			required: true,
+			description: 'Maximum Z depth per pass'
+		},
+		feed: {
+			type: 'number',
+			default: 150,
+			required: true,
+			description: 'Feed rate'
+		},
+		downFeed: {
+			type: 'number',
+			default: 50,
+			required: true,
+			description: 'Downward feed rate'
+		},
+		cutterDiameter: {
+			type: 'number',
+			default: 3.12,
+			required: true,
+			description: 'Diameter of milling cutter'
+		},
+		overlap: {
+			type: 'number',
+			default: 0.1,
+			required: true,
+			description: 'Overlap fraction'
+		},
+		clearance: {
+			type: 'number',
+			default: 2,
+			required: true,
+			description: 'Clearance amount over start Z position'
+		}
 	},
-	end: {
-		type: 'array',
-		elements: { type: 'number', default: 0 },
-		default: [ 0, 0, 0 ],
-		required: true,
-		isCoordinates: true,
-		description: 'Ending position for surface clear'
-	},
-	passDepth: {
-		type: 'number',
-		default: 1,
-		required: true,
-		description: 'Maximum Z depth per pass'
-	},
-	feed: {
-		type: 'number',
-		default: 150,
-		required: true,
-		description: 'Feed rate'
-	},
-	downFeed: {
-		type: 'number',
-		default: 50,
-		required: true,
-		description: 'Downward feed rate'
-	},
-	cutterDiameter: {
-		type: 'number',
-		default: 3.12,
-		required: true,
-		description: 'Diameter of milling cutter'
-	},
-	overlap: {
-		type: 'number',
-		default: 0.1,
-		required: true,
-		description: 'Overlap fraction'
-	},
-	clearance: {
-		type: 'number',
-		default: 2,
-		required: true,
-		description: 'Clearance amount over start Z position'
-	}
-}, 'begin-generator', 'end-generator'));
+	mergeParams: [ 'begin-generator', 'end-generator' ]
+});
 
 // Move to above starting position and start spindle
 push(`G0 Z${start.z + clearance}`);
