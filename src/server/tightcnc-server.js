@@ -121,6 +121,8 @@ class TightCNCServer extends EventEmitter {
 			});
 			this.controller.on('message', (msg) => {
 				this.messageLog.log(msg);
+				this.loggerMem.log('other', 'Message: ' + msg);
+				this.loggerDisk.log('other', 'Message: ' + msg);
 			});
 			this.controller.initConnection(true);
 		} else {
