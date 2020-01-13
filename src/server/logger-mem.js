@@ -61,7 +61,7 @@ class LoggerMem {
 
 		let startIdx = start - linesStartNum;
 		let endIdx = end - linesStartNum;
-		if (endIdx - startIdx > limit) startIdx = endIdx - limit;
+		if (limit && endIdx - startIdx > limit) startIdx = endIdx - limit;
 		return this.lines.slice(startIdx, endIdx);
 	}
 

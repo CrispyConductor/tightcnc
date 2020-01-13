@@ -464,6 +464,28 @@ class ConsoleUI extends EventEmitter {
 		return await this.client.op('getStatus');
 	}
 
+	runMessageFetchLoop() {
+		const runLoop = async() => {
+			await this.serverPollLoop(async() => {
+				try {
+					let newEntries = await this.client.op('getLog', {
+						logType: 'message',
+						start: -1,
+						limit: 1
+					});
+					let messageEntry = newEntries[0];
+					if (messageEntry && messageEntry[0] !== this.lastMessageEntryId) {
+						this.lastMessageEntryId = messageEntry[0];
+						this.setMessage(messageEntry[1]);
+					}
+				} catch (err) {
+					this.consoleui.clientError(err);
+				}
+			}, this.config.consoleui.log.messageUpdateInterval);
+		};
+		runLoop().catch(this.clientError.bind(this));
+	}
+
 	setupPrimaryStatusBoxes() {
 		this.machineStateStatusBox = this.addStatusBox('Machine', { state: 'NOT READY', held: null, error: null }, { state: 'State', held: 'Hold', error: 'Err' });
 		let posStatusInitial = {};

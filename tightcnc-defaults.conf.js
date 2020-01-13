@@ -88,7 +88,8 @@ module.exports = {
 		log: {
 			updateInterval: 250,
 			updateBatchLimit: 200,
-			bufferMaxSize: 500000
+			bufferMaxSize: 500000,
+			messageUpdateInterval: 1000
 		},
 		control: {
 			keybinds: {
