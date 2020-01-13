@@ -1,8 +1,11 @@
+const basepath = process.env.APPDATA || process.env.HOME || '/tmp';
+const path = require('path');
+
 module.exports = {
 	authKey: 'abc123',
 	serverPort: 2363,
 	host: 'http://localhost',
-	baseDir: '/tmp/tightcnc',
+	baseDir: path.resolve(basepath, 'tightcnc'),
 	controller: 'TinyG',
 	controllers: {
 		TinyG: {
@@ -32,7 +35,6 @@ module.exports = {
 		log: 'log',
 		macro: 'macro'
 	},
-	dataDir: '/tmp/tightcnc-data',
 	operations: {
 		probeSurface: {
 			defaultOptions: {
@@ -84,7 +86,7 @@ module.exports = {
 	enableDebug: false,
 	debugToStdout: false,
 	consoleui: {
-		logDir: '/tmp/tightcnc-consoleui-log',
+		logDir: path.resolve(basepath, 'tightcnc-consoleui'),
 		log: {
 			updateInterval: 250,
 			updateBatchLimit: 200,
