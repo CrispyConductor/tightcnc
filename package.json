@@ -2,6 +2,14 @@
   "name": "tightcnc",
   "version": "0.0.1",
   "description": "Simple backend-centric server for hobby cnc controllers",
+  "scripts": {
+    "server": "node ./src/server/server.js",
+    "consoleui": "node ./src/consoleui/consoleui.js"
+  },
+  "bin": {
+    "tightcnc-server": "./bin/tightcnc-server.js",
+    "tightcnc-consoleui": "./bin/tightcnc-consoleui.js"
+  },
   "dependencies": {
     "blessed": "^0.1.81",
     "common-schema": "^2.0.2",
