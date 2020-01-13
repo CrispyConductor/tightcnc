@@ -964,6 +964,13 @@ class TinyGController extends Controller {
 		if (line[0] != '{') throw new XError(XError.PARSE_ERROR, 'Error parsing received serial line', { data: line });
 		let data = AbbrJSON.parse(line);
 
+		// Check if the line contains a message that should be reported to the message log
+		let message = null;
+		if ('msg' in data) message = data.msg;
+		if ('r' in data && 'msg' in data.r) message = data.r.msg;
+		if ('er' in data && 'msg' in data.er) message = data.er.msg;
+		if (message) this.emit('message', message);
+
 		// Check if this is a SYSTEM READY response indicating a reset
 		if ('r' in data && data.r.msg === 'SYSTEM READY') {
 			this.debug('Got SYSTEM READY message');

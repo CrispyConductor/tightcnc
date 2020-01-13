@@ -8,17 +8,28 @@ class LoggerMem {
 	}
 
 	log(type, msg) {
-		if (typeof msg !== 'string') msg = JSON.stringify(msg);
-		if (type === 'send') msg = '> ' + msg;
-		else if (type === 'receive') msg = '< ' + msg;
-		else msg = '@ ' + msg;
-		msg = msg.trim();
+		if (msg === undefined) {
+			// single argument given - log raw line
+			msg = type;
+		} else {
+			// 2 arguments given, a type and a message
+			if (typeof msg !== 'string') msg = JSON.stringify(msg);
+			if (type === 'send') msg = '> ' + msg;
+			else if (type === 'receive') msg = '< ' + msg;
+			else msg = '@ ' + msg;
+			msg = msg.trim();
+		}
 
 		this.lines.push([ this.nextNum, msg ]);
 		this.nextNum++;
 		if (this.lines.length >= this.linesToKeep + this.shiftBatchSize) {
 			this.lines = this.lines.slice(this.lines.length - this.linesToKeep);
 		}
+	}
+
+	clear() {
+		this.lines = [];
+		this.nextNum = 1;
 	}
 
 	section(start, end, limit) {

@@ -137,6 +137,10 @@ class JobManager {
 		});
 		job = this.currentJob;
 
+		// Clear the message log
+		this.tightcnc.messageLog.clear();
+		this.tightcnc.messageLog.log('Job started.');
+
 		// Wait for the controller to stop moving
 		this.tightcnc.debug('startJob waitSync');
 		await this.tightcnc.controller.waitSync();

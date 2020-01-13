@@ -264,6 +264,13 @@ class OpWaitSync extends Operation {
 class OpGetLog extends Operation {
 	getParamSchema() {
 		return {
+			logType: {
+				type: String,
+				required: true,
+				default: 'comms',
+				enum: [ 'comms', 'message' ],
+				description: 'Which log to fetch'
+			},
 			start: {
 				type: Number,
 				description: 'Starting line to fetch.'
@@ -279,7 +286,15 @@ class OpGetLog extends Operation {
 		};
 	}
 	async run(params) {
-		return this.tightcnc.loggerMem.section(params.start, params.end, params.limit);
+		let logger;
+		if (params.logType === 'comms') {
+			logger = this.tightcnc.loggerMem;
+		} else if (params.logType === 'message') {
+			logger = this.tightcnc.messageLog;
+		} else {
+			throw new XError(XError.INVALID_ARGUMENT, 'Bad log type');
+		}
+		return logger.section(params.start, params.end, params.limit);
 	}
 }
 

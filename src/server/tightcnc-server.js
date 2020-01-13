@@ -85,6 +85,10 @@ class TightCNCServer extends EventEmitter {
 		this.loggerMem.log('other', 'Server started.');
 		this.loggerDisk.log('other', 'Server started.');
 
+		// Initialize the message log
+		this.messageLog = new LoggerMem(this.config.messageLog || {});
+		this.messageLog.log('Server started.');
+
 		// Initialize macros
 		await this.macros.initMacros();
 
@@ -114,6 +118,9 @@ class TightCNCServer extends EventEmitter {
 			this.controller.on('received', (line) => {
 				this.loggerMem.log('receive', line);
 				this.loggerDisk.log('receive', line);
+			});
+			this.controller.on('message', (msg) => {
+				this.messageLog.log(msg);
 			});
 			this.controller.initConnection(true);
 		} else {
