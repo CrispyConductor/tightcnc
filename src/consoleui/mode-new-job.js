@@ -9,11 +9,7 @@ class ModeNewJob extends ConsoleUIMode {
 
 	constructor(consoleui) {
 		super(consoleui);
-		this.jobFilename = null;
-		this.jobMacro = null;
-		this.jobMacroParams = {};
-		this.jobOptionInstances = {};
-		this.dryRunResults = null;
+		this.resetJobInfo(false);
 	}
 
 	updateJobInfoText() {
@@ -21,7 +17,7 @@ class ModeNewJob extends ConsoleUIMode {
 		if (this.jobFilename) jobInfoStr += 'File: ' + this.jobFilename + '\n';
 		if (this.jobMacro) jobInfoStr += 'Generator Macro: ' + this.jobMacro + '\n';
 		
-		for (let jobOptionName in this.jobOptionInstances) {
+		for (let jobOptionName in (this.jobOptionInstances || {})) {
 			let inst = this.jobOptionInstances[jobOptionName];
 			let optionStr = inst.getDisplayString();
 			if (optionStr) {
@@ -242,6 +238,7 @@ class ModeNewJob extends ConsoleUIMode {
 	}
 
 	makeJobOptionsObj() {
+		if (!this.jobOptionInstances) this._instantiateJobOptions();
 		let obj = {};
 		if (this.jobFilename) obj.filename = this.jobFilename;
 		else if (this.jobMacro) {
@@ -249,7 +246,7 @@ class ModeNewJob extends ConsoleUIMode {
 			obj.macroParams = this.jobMacroParams;
 		}
 		if (!obj.filename && !obj.macro) throw new XError(XError.INVALID_ARGUMENT, 'No filename specified');
-		for (let key in this.jobOptionInstances) {
+		for (let key in (this.jobOptionInstances || {})) {
 			this.jobOptionInstances[key].addToJobOptions(obj);
 		}
 		// This event allows other components to hook into and modify the job options object just before it is sent
@@ -342,17 +339,32 @@ class ModeNewJob extends ConsoleUIMode {
 			});
 	}
 
-	resetJobInfo() {
+	_instantiateJobOptions() {
+		this.jobOptionInstances = {};
+		for (let optionName in this.consoleui.jobOptionClasses) {
+			if (!this.jobOptionInstances[optionName]) {
+				let cls = this.consoleui.jobOptionClasses[optionName];
+				this.jobOptionInstances[optionName] = new cls(this.consoleui);
+			}
+		}
+		this.updateJobInfoText();
+	}
+
+	resetJobInfo(update = true) {
 		this.jobFilename = null;
 		this.jobMacro = null;
 		this.jobMacroParams = null;
 		this.dryRunResults = null;
-		this.jobOptionInstances = {};
-		this.updateJobInfoText();
+		this.jobOptionInstances = null;
+		if (update) {
+			this.updateJobInfoText();
+			this._instantiateJobOptions();
+		}
 	}
 
 	activateMode() {
 		super.activateMode();
+		if (!this.jobOptionInstances) this._instantiateJobOptions();
 	}
 
 	exitMode() {
