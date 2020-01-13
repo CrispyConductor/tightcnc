@@ -14,7 +14,7 @@ class ModeJobInfo extends ConsoleUIMode {
 		super(consoleui);
 		this.statusUpdateHandler = (status) => {
 			let text = this.getStatusText(status);
-			this.box.setContent(text);
+			this.infoTextbox.setContent(text);
 			this.consoleui.render();
 		};
 	}
@@ -59,6 +59,16 @@ class ModeJobInfo extends ConsoleUIMode {
 
 	init() {
 		super.init();
+
+		this.infoTextbox = blessed.box({
+			width: '100%',
+			height: '100%',
+			content: '',
+			align: 'center',
+			valign: 'center',
+			tags: true
+		});
+		this.box.append(this.infoTextbox);
 		
 		this.consoleui.registerHomeKey([ 'j', 'J' ], 'j', 'Job Info', () => this.consoleui.activateMode('jobInfo'), 4);
 		
