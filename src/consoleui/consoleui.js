@@ -753,6 +753,7 @@ class ConsoleUI extends EventEmitter {
 		this.setupPrimaryStatusBoxes();
 		this.updatePrimaryStatusBoxes(initStatus);
 		this.runStatusUpdateLoop();
+		this.runMessageFetchLoop();
 
 		this.activateMode('home');
 
