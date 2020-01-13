@@ -34,6 +34,9 @@ class TightCNCServer extends EventEmitter {
 			config = require('littleconf').getConfig();
 		}
 		this.config = config;
+		if (config.enableServer === false) {
+			throw new XError(XError.INVALID_ARGUMENT, 'enableServer config flag now found.  Ensure configuration is correct - check the documentation.');
+		}
 		this.baseDir = this.config.baseDir;
 
 		this.macros = new Macros(this);

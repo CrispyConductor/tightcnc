@@ -2,6 +2,7 @@ const basepath = process.env.APPDATA || process.env.HOME || '/tmp';
 const path = require('path');
 
 module.exports = {
+	enableServer: false,
 	authKey: 'abc123',
 	serverPort: 2363,
 	host: 'http://localhost',
