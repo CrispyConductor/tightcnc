@@ -9,17 +9,17 @@ class ConsoleUIMode extends CrispHooks {
 		this.modeHints = [];
 		this.activeModeHints = [];
 		this.modeIsActive = false;
+		this.box = blessed.box({
+			width: '100%',
+			height: '100%',
+			tags: true
+		});
 	}
 
 	/**
 	 * Called once all modes have been registered, in registration order.
 	 */
 	init() {
-		this.box = blessed.box({
-			width: '100%',
-			height: '100%',
-			tags: true
-		});
 	}
 
 	/**
