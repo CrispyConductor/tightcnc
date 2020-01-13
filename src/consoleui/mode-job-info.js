@@ -62,7 +62,7 @@ class ModeJobInfo extends ConsoleUIMode {
 		
 		this.consoleui.registerHomeKey([ 'j', 'J' ], 'j', 'Job Info', () => this.consoleui.activateMode('jobInfo'), 4);
 		
-		this.registerModeKey([ 'escape' ], [ 'Esc' ], 'Home', () => this.consoleui.exitMode());
+		this.registerModeKey([ 'escape' ], [ 'Esc' ], 'Home', () => this.consoleui.exitMode(), 0);
 
 		// Pull in a few useful keybinds from the control mode
 		let controlKeybinds = this.consoleui.config.consoleui.control.keybinds;
@@ -71,7 +71,7 @@ class ModeJobInfo extends ConsoleUIMode {
 			this.registerModeKey(kb.keys, kb.keyNames, kb.label, () => {
 				controlMode._executeKeybind(kb.action)
 					.catch((err) => this.consoleui.clientError(err));
-			});
+			}, 10);
 		};
 		for (let key of [ 'hold', 'resume', 'cancel' ]) {
 			if (controlKeybinds[key]) {
