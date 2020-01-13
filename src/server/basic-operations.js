@@ -298,6 +298,50 @@ class OpGetLog extends Operation {
 	}
 }
 
+class OpProvideInput extends Operation {
+	getParamSchema() {
+		return {
+			inputId: {
+				type: Number,
+				required: true,
+				description: 'ID of the input being waited for'
+			},
+			value: {
+				type: 'mixed',
+				required: true,
+				description: 'Value of the input to provide'
+			}
+		};
+	}
+	run(params) {
+		if (this.tightcnc.waitingForInput && this.tightcnc.waitingForInput.id === params.inputId) {
+			this.tightcnc.provideInput(params.value);
+		} else {
+			throw new XError(XError.BAD_REQUEST, 'Not waiting on input');
+		}
+	}
+}
+
+class OpCancelInput extends Operation {
+	getParamSchema() {
+		return {
+			inputId: {
+				type: Number,
+				required: true,
+				description: 'ID of the input being waited for'
+			}
+		};
+	}
+	run(params) {
+		if (this.tightcnc.waitingForInput && this.tightcnc.waitingForInput.id === params.inputId) {
+			this.tightcnc.cancelInput();
+		} else {
+			throw new XError(XError.BAD_REQUEST, 'Not waiting on input');
+		}
+	}
+}
+
+
 function registerOperations(tightcnc) {
 	tightcnc.registerOperation('getStatus', OpGetStatus);
 	tightcnc.registerOperation('send', OpSend);
@@ -313,6 +357,8 @@ function registerOperations(tightcnc) {
 	tightcnc.registerOperation('setOrigin', OpSetOrigin);
 	tightcnc.registerOperation('waitSync', OpWaitSync);
 	tightcnc.registerOperation('getLog', OpGetLog);
+	tightcnc.registerOperation('provideInput', OpProvideInput);
+	tightcnc.registerOperation('cancelInput', OpCancelInput);
 }
 
 module.exports = registerOperations;

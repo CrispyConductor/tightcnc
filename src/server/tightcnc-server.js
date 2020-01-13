@@ -12,6 +12,8 @@ const fs = require('fs');
 const JobManager = require('./job-manager');
 const stable = require('stable');
 const Macros = require('./macros');
+const pasync = require('pasync');
+const { createSchema } = require('common-schema');
 
 /**
  * This is the central class for the application server.  Operations, gcode processors, and controllers
@@ -47,6 +49,9 @@ class TightCNCServer extends EventEmitter {
 		this.operations = {};
 
 		this.gcodeProcessors = {};
+
+		this.waitingForInput = null;
+		this.waitingForInputCounter = 1;
 
 		// Register builtin modules
 		this.registerController('TinyG', require('./tinyg-controller'));
@@ -220,6 +225,15 @@ class TightCNCServer extends EventEmitter {
 		// Emit 'statusRequest' event so other components can modify the status object directly
 		this.emit('statusRequest', statusObj);
 
+		// Add input request
+		if (this.waitingForInput) {
+			statusObj.requestInput = {
+				prompt: this.waitingForInput.prompt,
+				schema: this.waitingForInput.schema,
+				id: this.waitingForInput.id
+			};
+		}
+
 		// Return status
 		return statusObj;
 	}
@@ -306,6 +320,47 @@ class TightCNCServer extends EventEmitter {
 
 	async runMacro(macro, params = {}, options = {}) {
 		return await this.macros.runMacro(macro, params, options);
+	}
+
+	async requestInput(prompt, schema) {
+		if (prompt && typeof prompt === 'object' && !schema) {
+			schema = prompt;
+			prompt = null;
+		}
+		if (schema) {
+			if (typeof schema.getData !== 'function') {
+				schema = createSchema(schema);
+			}
+			schema = schema.getData();
+		}
+		if (!prompt) prompt = 'Waiting ...';
+		if (this.waitingForInput) {
+			await this.waitingForInput.waiter.promise;
+			return await this.requestInput(prompt, schema);
+		}
+		this.waitingForInput = {
+			prompt: prompt,
+			schema: schema,
+			waiter: pasync.waiter(),
+			id: this.waitingForInputCounter++
+		};
+		let result = await this.waitingForInput.waiter.promise;
+		return result;
+	}
+
+	provideInput(value) {
+		if (!this.waitingForInput) throw new XError(XError.INVALID_ARGUMENT, 'Not currently waiting for input');
+		let w = this.waitingForInput;
+		this.waitingForInput = null;
+		w.waiter.resolve(value);
+	}
+
+	cancelInput(err) {
+		if (!err) err = new XError(XError.CANCELLED, 'Requested input cancelled');
+		if (!this.waitingForInput) return;
+		let w = this.waitingForInput;
+		this.waitingForInput = null;
+		w.waiter.reject(err);
 	}
 
 }

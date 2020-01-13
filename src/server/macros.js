@@ -228,7 +228,8 @@ class Macros {
 	}
 
 	async _makeMacroEnv(code, params, options) {
-		let env = {
+		let env;
+		env = {
 			// push gcode function available inside macro.  In gcode processor, pushes onto the gcode processor stream.
 			// Otherwise, sends to controller.  Tracks if the most recent sent line is executed for syncing.
 			push: (gline) => {
@@ -258,6 +259,11 @@ class Macros {
 
 			runMacro: async(macro, params = {}) => {
 				await this.runMacro(macro, params, options);
+			},
+
+			input: async(prompt, schema) => {
+				await env.sync();
+				return await this.tightcnc.requestInput(prompt, schema);
 			},
 
 			tightcnc: this.tightcnc,
