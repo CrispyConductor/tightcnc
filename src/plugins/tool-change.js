@@ -195,6 +195,8 @@ class ToolChangeProcessor extends GcodeProcessor {
 
 }
 
+ToolChangeProcessor.DEFAULT_ORDER = 800000;
+
 
 function findCurrentJobGcodeProcessor(tightcnc, name, throwOnMissing = true) {
 	let currentJob = tightcnc.jobManager.currentJob;

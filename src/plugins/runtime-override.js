@@ -71,6 +71,8 @@ class RuntimeOverride extends GcodeProcessor {
 
 }
 
+RuntimeOverride.DEFAULT_ORDER = 950000;
+
 class SetFeedMultiplierOperation extends Operation {
 
 	getParamSchema() {

@@ -271,8 +271,13 @@ class TightCNCServer extends EventEmitter {
 
 		// Sort gcode processors
 		let sortedGcodeProcessors = stable(options.gcodeProcessors || [], (a, b) => {
-			let aorder = ('order' in a) ? a.order : 0;
-			let border = ('order' in b) ? b.order : 0;
+			let aorder, border;
+			if ('order' in a) aorder = a.order;
+			else if (a.name && this.gcodeProcessors[a.name] && 'DEFAULT_ORDER' in this.gcodeProcessors[a.name]) aorder = this.gcodeProcessors[a.name].DEFAULT_ORDER;
+			else aorder = 0;
+			if ('order' in b) border = b.order;
+			else if (b.name && this.gcodeProcessors[b.name] && 'DEFAULT_ORDER' in this.gcodeProcessors[b.name]) border = this.gcodeProcessors[b.name].DEFAULT_ORDER;
+			else border = 0;
 			if (aorder > border) return 1;
 			if (aorder < border) return -1;
 			return 0;

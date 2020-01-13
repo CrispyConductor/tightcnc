@@ -118,6 +118,8 @@ class JobRecoveryTracker extends GcodeProcessor {
 
 }
 
+JobRecoveryTracker.DEFAULT_ORDER = 400000;
+
 
 /**
  * This gcode processor is used to recovery a job that was interrupted before it could be completed.  It loads the
@@ -271,6 +273,8 @@ class JobRecoveryProcessor extends GcodeProcessor {
 	}
 
 }
+
+JobRecoveryProcessor.DEFAULT_ORDER = 500000;
 
 
 /**
