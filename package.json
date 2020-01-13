@@ -1,7 +1,8 @@
 {
   "name": "tightcnc",
   "version": "0.0.1",
-  "description": "Simple backend-centric server for hobby cnc controllers",
+  "description": "Backend-centric job-oriented server for hobby cnc controllers",
+  "keywords": [ "cnc", "gcode", "tinyg", "g2core" ],
   "scripts": {
     "server": "node ./src/server/server.js",
     "consoleui": "node ./src/consoleui/consoleui.js"
@@ -32,5 +33,9 @@
     "zstreams": "^4.0.1"
   },
   "devDependencies": {},
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/crispy1989/tightcnc.git"
+  }
 }
