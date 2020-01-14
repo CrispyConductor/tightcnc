@@ -702,7 +702,7 @@ class ConsoleUI extends EventEmitter {
 					this.clientError(err);
 				});
 		} else {
-			showConfirm(ri.prompt || 'Hit ENTER to continue ...', {}, dialog)
+			this.showConfirm(ri.prompt || 'Hit ENTER to continue ...', {}, dialog)
 				.then((result) => {
 					if (!result) {
 						this._dismissInputRequestDialog();
