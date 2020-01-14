@@ -233,7 +233,7 @@ class Macros {
 			// push gcode function available inside macro.  In gcode processor, pushes onto the gcode processor stream.
 			// Otherwise, sends to controller.  Tracks if the most recent sent line is executed for syncing.
 			push: (gline) => {
-				if (typeof gline === 'string') gline = new GcodeLine(gline);
+				if (typeof gline === 'string' || Array.isArray(gline)) gline = new GcodeLine(gline);
 				if (options.push) {
 					options.push(gline);
 				} else if (options.gcodeProcessor) {
@@ -274,6 +274,7 @@ class Macros {
 			gcodeProcessor: options.gcodeProcessor,
 			controller: this.tightcnc.controller,
 			axisLabels: this.tightcnc.controller.axisLabels,
+			XError: XError,
 
 			macroMeta: () => {} // this function is a no-op in normal operation
 		};
