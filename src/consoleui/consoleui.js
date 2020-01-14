@@ -19,6 +19,12 @@ class ConsoleUI extends EventEmitter {
 		this.modes = {};
 		this.jobOptionClasses = {};
 		this.enableRendering = true;
+		this.inputRequest = {
+			lastInputId: null,
+			dialogElement: null,
+			isHidden: false,
+			isComplete: true
+		};
 	}
 
 	async initLog() {
@@ -653,6 +659,139 @@ class ConsoleUI extends EventEmitter {
 		this.log(err, err.stack);
 	}
 
+	_makeInputRequestDialog(container) {
+		let ri = this.inputRequest.spec;
+		let dialog = blessed.box({
+			width: '50%',
+			height: '50%',
+			top: 'center',
+			left: 'center',
+			border: { type: 'line' }
+		});
+		container.append(dialog);
+		const inputGiven = (result) => {
+			this.runWithWait(async() => {
+				await this.client.op('provideInput', {
+					inputId: ri.id,
+					value: result
+				});
+			})
+				.then(() => {
+					this._closeInputRequestDialog();
+					this.inputRequest.isHidden = false;
+					this.inputRequest.isComplete = true;
+				}, (err) => {
+					this.clientError(err);
+					this._dismissInputRequestDialog();
+				});
+		};
+		if (ri.schema) {
+			if (ri.prompt) {
+				ri.schema.title = ri.prompt;
+				ri.schema.label = ri.prompt;
+			}
+			let form = new ListForm(this);
+			form.showEditor(dialog, ri.schema)
+				.then((result) => {
+					if (form.editorCancelled) {
+						this._dismissInputRequestDialog();
+					} else {
+						inputGiven(result);
+					}
+				}, (err) => {
+					this.clientError(err);
+				});
+		} else {
+			showConfirm(ri.prompt || 'Hit ENTER to continue ...', {}, dialog)
+				.then((result) => {
+					if (!result) {
+						this._dismissInputRequestDialog();
+					} else {
+						inputGiven(true);
+					}
+				}, (err) => {
+					this.clientError(err);
+				});
+		}
+		return dialog;
+	}
+
+	_showInputRequestDialog() {
+		let dialog = this._makeInputRequestDialog(this.mainPane);
+		this.inputRequest.dialogElement = dialog;
+		this.inputRequest.isHidden = false;
+		if (this.inputRequest.recallKey) {
+			this.modes['home'].removeModeKey(this.inputRequest.recallKey);
+			this.inputRequest.recallKey = null;
+		}
+	}
+
+	_closeInputRequestDialog() {
+		if (!this.inputRequest.dialogElement) return;
+		this.mainPane.remove(this.inputRequest.dialogElement);
+		this.inputRequest.dialogElement = null;
+	}
+
+	_dismissInputRequestDialog() {
+		if (this.inputRequest.isHidden || !this.inputRequest.dialogElement) return;
+		this._closeInputRequestDialog();
+		this.inputRequest.isHidden = true;
+		this.inputRequest.recallKey = this.registerHomeKey([ 'i', 'I' ], 'i', 'Input Req', () => {
+			if (!this.inputRequest.isHidden || this.inputRequest.dialogElement) return;
+			this._showInputRequestDialog();
+		}, 1000);
+		this.render();
+	}
+
+	_resetInputRequest() {
+		this._closeInputRequestDialog();
+		if (this.inputRequest.recallKey) {
+			this.modes['home'].removeModeKey(this.inputRequest.recallKey);
+			this.inputRequest.recallKey = null;
+		}
+		this.inputRequest.lastInputId = null;
+		this.inputRequest.isHidden = false;
+		this.inputRequest.isComplete = false;
+	}
+
+	_checkInputRequestOnStatusReport(status) {
+		if (status.requestInput) {
+			if (status.requestInput.id !== this.inputRequest.lastInputId) {
+				if (this.inputRequest.isHidden) {
+					// remove recall keybind
+					if (this.inputRequest.recallKey) {
+						this.modes['home'].removeModeKey(this.inputRequest.recallKey);
+						this.inputRequest.recallKey = null;
+					}
+				}
+				if (this.inputRequest.dialogElement) {
+					this._closeInputRequestDialog();
+				}
+				this.inputRequest.spec = status.requestInput;
+				// show dialog
+				this._showInputRequestDialog();
+				// update state vars
+				this.inputRequest.lastInputId = status.requestInput.id;
+				this.inputRequest.isHidden = false;
+				this.inputRequest.isComplete = false;
+			}
+		} else {
+			if (this.inputRequest.isHidden) {
+				// remove recall keybind
+				if (this.inputRequest.recallKey) {
+					this.modes['home'].removeModeKey(this.inputRequest.recallKey);
+					this.inputRequest.recallKey = null;
+				}
+			}
+			if (this.inputRequest.dialogElement) {
+				this._closeInputRequestDialog();
+			}
+			this.inputRequest.lastInputId = null;
+			this.inputRequest.isHidden = false;
+			this.inputRequest.isComplete = false;
+		}
+	}
+
 	runStatusUpdateLoop() {
 		const runLoop = async() => {
 			await this.serverPollLoop(async() => {
@@ -662,9 +801,11 @@ class ConsoleUI extends EventEmitter {
 					this.lastStatus = status;
 					this.axisLabels = status.controller.axisLabels;
 					this.usedAxes = status.controller.usedAxes;
+					this._checkInputRequestOnStatusReport(status);
 					this.emit('statusUpdate', status);
 				} catch (err) {
 					this.clientError(err);
+					this._resetInputRequest();
 				}
 				this.updatePrimaryStatusBoxes(status);
 			});
@@ -719,7 +860,7 @@ class ConsoleUI extends EventEmitter {
 	}
 
 	registerHomeKey(keys, keyNames, keyLabel, fn, order = 1000) {
-		this.modes['home'].registerHomeKey(keys, keyNames, keyLabel, fn, order);
+		return this.modes['home'].registerHomeKey(keys, keyNames, keyLabel, fn, order);
 	}
 
 	async serverPollLoop(fn, minInterval = 300) {

@@ -3,6 +3,7 @@ const { Schema, createSchema } = require('common-schema');
 const pasync = require('pasync');
 const objtools = require('objtools');
 
+
 class ListForm {
 
 	constructor(consoleui, options = {}) {
@@ -117,6 +118,7 @@ class ListForm {
 			//console.log(err, err.stack);
 			//process.exit(1);
 			await this._message(container, err.message);
+			if (this.consoleui) this.consoleui.log(err, err.stack);
 			return await this._editValue(container, schemaData, value, options);
 		}
 		return [ r, cancel ];
@@ -186,6 +188,7 @@ class ListForm {
 					value = options.normalize(value);
 				} catch (err) {
 					this._message(container, err.message).then(() => textbox.focus());
+					if (this.consoleui) this.consoleui.log(err, err.stack);
 					return;
 				}
 			}
@@ -356,6 +359,7 @@ class ListForm {
 						value = options.normalize(value);
 					} catch (err) {
 						this._message(container, err.message);
+						if (this.consoleui) this.consoleui.log(err, err.stack);
 						return true;
 					}
 				}
@@ -378,6 +382,7 @@ class ListForm {
 					});
 				} catch (err) {
 					await this._message(container, err.message);
+					if (this.consoleui) this.consoleui.log(err, err.stack);
 				}
 				for (let i = 0; i < value.length; i++) {
 					listBox.setItem(i, this._getEntryDisplayLabel(i, value[i], elementsSchema));
@@ -441,6 +446,7 @@ class ListForm {
 						})
 						.catch((err) => {
 							this._message(container, '' + err);
+							if (this.consoleui) this.consoleui.log(err, err.stack);
 						});
 				}
 			},
@@ -465,6 +471,7 @@ class ListForm {
 						value = options.normalize(value);
 					} catch (err) {
 						this._message(container, err.message);
+						if (this.consoleui) this.consoleui.log(err, err.stack);
 						return true;
 					}
 				}
@@ -487,6 +494,7 @@ class ListForm {
 					});
 				} catch (err) {
 					await this._message(container, err.message);
+					if (this.consoleui) this.consoleui.log(err, err.stack);
 				}
 				for (let i = 0; i < mapKeys.length; i++) {
 					listBox.setItem(i, this._getEntryDisplayLabel(mapKeys[i], value[mapKeys[i]], schemaData.values));
@@ -563,6 +571,7 @@ class ListForm {
 						value = options.normalize(value);
 					} catch (err) {
 						this._message(container, err.message);
+						if (this.consoleui) this.consoleui.log(err, err.stack);
 						return true;
 					}
 				}
@@ -585,6 +594,7 @@ class ListForm {
 					});
 				} catch (err) {
 					await this._message(container, err.message);
+					if (this.consoleui) this.consoleui.log(err, err.stack);
 				}
 				for (let i = 0; i < keysByIndex.length; i++) {
 					listBox.setItem(i, getEntryLabel(keysByIndex[i], value[keysByIndex[i]]));

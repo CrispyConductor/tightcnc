@@ -5,8 +5,6 @@ class ModeHome extends ConsoleUIMode {
 
 	constructor(consoleui) {
 		super(consoleui);
-		this.homeKeys = [];
-		this.firstHomeActivate = true;
 	}
 
 	init() {
@@ -24,12 +22,6 @@ class ModeHome extends ConsoleUIMode {
 	}
 
 	activateMode() {
-		if (this.firstHomeActivate) {
-			this.firstHomeActivate = false;
-			for (let homeKey of this.homeKeys) {
-				this.box.key(homeKey.keys, homeKey.fn);
-			}
-		}
 		super.activateMode();
 	}
 
@@ -38,18 +30,7 @@ class ModeHome extends ConsoleUIMode {
 	}
 
 	registerHomeKey(keys, keyNames, keyLabel, fn, order = 1000) {
-		this.registerModeHint(keyNames, keyLabel, order);
-		if (!Array.isArray(keys)) keys = [ keys ];
-
-		let pos = this.homeKeys.length;
-		for (let i = 0; i < this.homeKeys.length; i++) {
-			if (this.homeKeys[i].order > order) {
-				pos = i;
-				break;
-			}
-		}
-
-		this.homeKeys.splice(pos, 0, { keys, keyNames, keyLabel, fn, order });
+		return this.registerModeKey(keys, keyNames, keyLabel, fn, order);
 	}
 
 }

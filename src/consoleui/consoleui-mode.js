@@ -44,6 +44,7 @@ class ConsoleUIMode extends CrispHooks {
 	}
 
 	registerModeKey(keys, keyNames, keyLabel, fn, order = 1000) {
+		if (!Array.isArray(keys)) keys = [ keys ];
 		let hint = this.registerModeHint(keyNames, keyLabel, order);
 		this.box.key(keys, fn);
 		return { hint, keys, fn };
