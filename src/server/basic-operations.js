@@ -69,6 +69,7 @@ class OpCancel extends Operation {
 	getParamSchema() { return {}; }
 	run() {
 		this.tightcnc.controller.cancel();
+		this.tightcnc.cancelInput();
 	}
 }
 
