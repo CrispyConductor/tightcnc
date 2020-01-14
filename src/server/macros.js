@@ -266,6 +266,10 @@ class Macros {
 				return await this.tightcnc.requestInput(prompt, schema);
 			},
 
+			message: (msg) => {
+				this.tightcnc.message(msg);
+			},
+
 			tightcnc: this.tightcnc,
 			gcodeProcessor: options.gcodeProcessor,
 			controller: this.tightcnc.controller,

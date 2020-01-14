@@ -128,9 +128,7 @@ class TightCNCServer extends EventEmitter {
 				this.loggerDisk.log('receive', line);
 			});
 			this.controller.on('message', (msg) => {
-				this.messageLog.log(msg);
-				this.loggerMem.log('other', 'Message: ' + msg);
-				this.loggerDisk.log('other', 'Message: ' + msg);
+				this.message(msg);
 			});
 			this.controller.initConnection(true);
 		} else {
@@ -146,6 +144,12 @@ class TightCNCServer extends EventEmitter {
 		for (let opname in this.operations) {
 			await this.operations[opname].init();
 		}
+	}
+
+	message(msg) {
+		this.messageLog.log(msg);
+		this.loggerMem.log('other', 'Message: ' + msg);
+		this.loggerDisk.log('other', 'Message: ' + msg);
 	}
 
 	debug(str) {
