@@ -736,7 +736,7 @@ class ConsoleUI extends EventEmitter {
 		if (this.inputRequest.isHidden || !this.inputRequest.dialogElement) return;
 		this._closeInputRequestDialog();
 		this.inputRequest.isHidden = true;
-		this.inputRequest.recallKey = this.registerHomeKey([ 'i', 'I' ], 'i', 'Input Req', () => {
+		this.inputRequest.recallKey = this.registerHomeKey([ 'i', 'I' ], 'i', '{blue-bg}Input Req{/blue-bg}', () => {
 			if (!this.inputRequest.isHidden || this.inputRequest.dialogElement) return;
 			this._showInputRequestDialog();
 		}, 1000);
