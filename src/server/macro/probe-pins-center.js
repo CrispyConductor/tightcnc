@@ -78,7 +78,7 @@ async function probePinCenter(axisNum = 0, direction = -1, maxTravel = null) {
 	let axisPos1 = controller.getPos()[axisNum];
 	let perpAxisPos = await probeRel(perpAxisNum, direction * maxTravel, true);
 	// Back up to a clearance position
-	await moveRel(perpAxisNum, -direction * (Math.max(pinDiameter, axisDiameter) / 2 + extraClearance));
+	await moveRel(perpAxisNum, -direction * (Math.max(pinDiameter, probeDiameter) / 2 + extraClearance));
 	await sync();
 	let perpClearancePos = controller.getPos()[perpAxisNum];
 

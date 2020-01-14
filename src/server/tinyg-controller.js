@@ -1497,10 +1497,15 @@ class TinyGController extends Controller {
 				try { await waiter.promise; } catch (err) {}
 				// On my system, probing to the same point generates an extra response (after the normal response) that looks like this: {"r":{"msg":"Probing error - invalid probe destination"},"f":[1,250,0,8644]}
 				// To allow time for this response to be received, as well as for movement to start (at this slow feed rate), wait a short period of time
-				await pasync.setTimeout(750);
+				await pasync.setTimeout(1000);
 				// Execute a feed hold (to stop movement if it's occurring), a wipe (to prevent the movement from resuming), and a clear (in case it soft alarmed)
 				this._sendImmediate('!');
 				this._sendImmediate('%');
+
+				// We need to wait a little bit of time after sending a wipe before sending more stuff, or it could get lost.  Normally this
+				// is handled elsewhere (using _disableSending), but sendImmediate() bypasses this, so we need to wait here.
+				await pasync.setTimeout(250);
+
 				this._sendImmediate({clear:null});
 				// Reject the waiter if it hasn't resolved, since we cleared it out with the wipe
 				waiter.reject('');
