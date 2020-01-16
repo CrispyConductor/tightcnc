@@ -1,0 +1,49 @@
+# Example configuration file for TightCNC.  This configuration is shared by both the client and server, although the server
+# has the most settings.
+# This config file is very brief.  For a more complete list of options, see https://github.com/crispy1989/tightcnc/blob/master/tightcnc-defaults.conf.js
+# If you plan to use autolevel, job recovery, tool change, or any other plugin, see the corresponding documentation for config examples.
+# The configuration for these can be crucial to prevent machine mishaps.
+
+
+# Change this to true to enable starting the server.  (Ensures the config file has been looked at.)
+enableServer: false
+
+# Client-only: The server url to connect to
+host: 'http://localhost'
+
+# The authentication key shared between server and client.  Change this to something unique.
+authKey: 'abc123'
+
+# Port for the server to listen on
+serverPort: 2363
+
+# Root directory for tightcnc server files.  Make sure this directory is writable.
+baseDir: '/var/lib/tightcnc'
+
+# Which controller is configured to be used
+controller: 'TinyG'
+
+# Configurations for the controllers
+controllers:
+	TInyG:
+
+		# serial port connection configuration
+		# Hardware flow control (rts/cts) is recommended, and should be enable on the device
+		port: '/dev/ttyUSB0',
+		baudRate: 115200,
+		dataBits: 8,
+		stopBits: 1,
+		parity: 'none',
+		rtscts: true,
+		xany: false,
+
+		# Which of the TinyG supported axes are actually used, specified as a boolean array x,y,z,a,b,c
+		usedAxes: [ true, true, true, false, false, false ]
+
+		# Which of the axes can be homed
+		homableAxes: [ true, true, true ]
+
+# Note: If you plan to use autolevel, job recovery, tool change, or any other plugin, see the corresponding documentation for config examples.
+# The configuration for these can be crucial to prevent machine mishaps.
+
+
