@@ -142,3 +142,6 @@ await moveAbs(pinsAxisNum, pinsAxisCenter);
 await moveAbs(otherAxisNum, otherAxisCenter);
 await sync();
 
+message('Pin probe complete.  Pin skew: ' + Math.abs(pin1OtherAxisCenter - pin2OtherAxisCenter));
+
+
