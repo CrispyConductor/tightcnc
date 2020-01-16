@@ -10,11 +10,13 @@
   ],
   "scripts": {
     "server": "node ./src/server/server.js",
-    "consoleui": "node ./src/consoleui/consoleui.js"
+    "consoleui": "node ./src/consoleui/consoleui.js",
+    "cli": "node ./bin/cli.js"
   },
   "bin": {
     "tightcnc-server": "./bin/tightcnc-server.js",
-    "tightcnc-consoleui": "./bin/tightcnc-consoleui.js"
+    "tightcnc-consoleui": "./bin/tightcnc-consoleui.js",
+    "tightcnc": "./bin/cli.js"
   },
   "main": "src/index.js",
   "dependencies": {
