@@ -287,7 +287,7 @@ class ToolChangeConsoleUIJobOption extends JobOption {
 	constructor(consoleui) {
 		super(consoleui);
 		this.tcOptions = {
-			handleToolChange: true,
+			handleToolChange: false,
 			handleJobStop: true,
 			toolChangeOnM6: true,
 			toolChangeOnT: true,
