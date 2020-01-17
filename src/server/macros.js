@@ -275,6 +275,7 @@ class Macros {
 			controller: this.tightcnc.controller,
 			axisLabels: this.tightcnc.controller.axisLabels,
 			XError: XError,
+			GcodeLine: GcodeLine,
 
 			macroMeta: () => {} // this function is a no-op in normal operation
 		};
