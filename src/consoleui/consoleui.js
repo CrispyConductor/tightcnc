@@ -485,7 +485,7 @@ class ConsoleUI extends EventEmitter {
 						this.setMessage(messageEntry[1]);
 					}
 				} catch (err) {
-					this.consoleui.clientError(err);
+					this.clientError(err);
 				}
 			}, this.config.consoleui.log.messageUpdateInterval);
 		};
