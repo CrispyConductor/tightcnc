@@ -1457,6 +1457,8 @@ class TinyGController extends Controller {
 		// Disable error events, since we may need to handle soft alarms
 		this._disableResponseErrorEvent = true;
 
+		let activeCoordSys = undefined;
+
 		try {
 			// Wait for motion to stop so position information is synchronized
 			await this.waitSync();
@@ -1476,7 +1478,7 @@ class TinyGController extends Controller {
 			if (selectedAxisNum === null) throw new XError(XError.INVALID_ARGUMENT, 'Cannot probe to same location');
 
 			// Store the currently active coordinate system to work around tinyg bug
-			let activeCoordSys = this.activeCoordSys;
+			activeCoordSys = this.activeCoordSys;
 
 			// Test if the current version of TinyG uses machine coordinates for probing or local coordinates
 			// Note that if offsets are zero, it doesn't matter, and don't bother testing
@@ -1556,12 +1558,6 @@ class TinyGController extends Controller {
 				probeTripped = true;
 			}
 
-			// Restore active coordinate system (to work around bug)
-			if (typeof activeCoordSys === 'number' && activeCoordSys >= 0) {
-				this._sendImmediate('G' + (54 + activeCoordSys));
-				this.activeCoordSys = activeCoordSys;
-			}
-
 			// Handle probe results
 			if (!probeTripped) {
 				throw new XError(XError.PROBE_NOT_TRIPPED, 'Probe was not tripped during probing');
@@ -1574,6 +1570,13 @@ class TinyGController extends Controller {
 			return curPos;
 
 		} finally {
+			// Restore active coordinate system (to work around bug)
+			if (typeof activeCoordSys === 'number' && activeCoordSys >= 0) {
+				this._sendImmediate('G' + (54 + activeCoordSys));
+				this.activeCoordSys = activeCoordSys;
+			}
+
+			// Re-enable normal operation
 			this._disableSending = false;
 			this._disableResponseErrorEvent = false;
 			this._checkSendLoop();
