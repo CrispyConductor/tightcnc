@@ -21,7 +21,7 @@ Its features include:
 * Includes a framework for building automatic parameterized gcode generators, based on the macro system
 * Runtime feed override
 * Supports multiple simultaneous clients
-* Currently supports TinyG, but includes a controller abstraction layer for future implementation of other controllers
+* Currently supports TinyG (and probably g2core, but untested), but includes a controller abstraction layer for future implementation of other controllers
 * For TinyG, uses an algorithm to estimate a gcode line's position in various queues and buffers, allowing for advanced flow control and extra progress feedback
 * Fast gcode sender supporting short, fast moves while still ensuring immediate operations such as feed hold/cancel are immediately effective
 
@@ -56,7 +56,7 @@ Create a file called `tightcnc.conf`, copied from [tightcnc.conf-example](https:
 be located in the package root directory (the git checkout directory if cloned from git, or `node_modules/tightcnc/` if installed from npm), or in `/etc`.  You
 can also specify the location of the configuration file by setting the environment variable `TIGHTCNC_CONFIG` to the path of the config file, including filename.
 
-Open the config file and add/edit options as needed.  The server will not start until it finds the configuration file.  Proper configuration is critical for safe operation.
+Open the config file and add/edit options as needed.  It is in standard YAML (or JSON) format.  The server will not start until it finds the configuration file.  Proper configuration is critical for safe operation.
 In addition to editing the options found in the example configuration, take a look at the [config defaults](https://github.com/crispy1989/tightcnc/blob/master/tightcnc-defaults.conf.js) file for a more complete list of options.  Also
 check the options for any plugins you plan to use.
 
@@ -295,7 +295,7 @@ the device.  The log is stored across several files which are automatically rota
 TightCNC includes a macro system capable of being used independently, as part of a job, or as a source for job gcode (called a generator).  Macros are written
 in javascript and executed in the TightCNC context, and as such are considered privileged code (ie, don't run macros from untrusted sources).  For security
 reasons, macros cannot currently be edited via the API, and must be edited on disk on the server.  It's possible this could change in the future.  Macros
-should be placed in the tightcnc macros directory, and must end in `.js`.
+should be placed in the tightcnc macro directory (inside the configured base directory), and must end in `.js`.
 
 Example basic macro (moves in a circle):
 
@@ -367,8 +367,87 @@ calls to `push()` in a generator should be called with `await` to prevent fillin
 
 ### Included Macros
 
+There are a couple currently existing macros.  More are planned.  These are stored in `src/server/macro/` inside the source repository.  If a user macro has the same name
+as a built-in macro, the user macro will override it.  This can be used to easily customize the built-ins.
+
+The current included macros are:
+
+* `begin-generator`: This macro is executed at the start of built-in generators to do things like start the spindle and coolant.  This can be overridden for customized behavior.
+* `end-generator`: Like `begin-generator`, is executed at the end of built-in generators.
+* `generator-flatten-surface`: This generates gcode to flatten a surface.
+* `mill-hole`: This moves the machine in a motion to mill a round hole with a selected size.
+* `probe-pins-center`: An example probing macro.  When used with a contact probe and 2 vertical pins parallel to the Y axis, it will find the center of both pins using the probe and then find a reference point at the midpoint of the pins.  To use, the probe must be positioned in between the two pins, and must be within 1 pin diameter of the lower pin.
 
 
+## Operations
+
+A core internal concent in TightCNC is the operation.  It is analogous to an API call, but is additionally used internally for other functions such as macros.
+Operations provide abstractions for common actions.  The current operations are:
+
+* `getStatus`: Returns current server and machine status.  Parameters: `fields` (an array of fields to return; if absent, all fields are returned), `sync` (if true, runs a `waitSync` operation before returning status)
+* `send`: Sends a line of gcode to the controller.  Parameters: `line` (the string gcode line to send), `wait` (if true, wait for confirmation the line was transmitted to the controller before returning)
+* `hold`: Start a feed hold.
+* `resume`: Resume movement from a feed hold.
+* `cancel`: Cancel any running gcode, jobs, and macros, and flush the gcode queues.
+* `reset`: Attempt to reset the controller.
+* `realTimeMove`: Jogs the machine.  Keep calling repeatedly to keep jogging.  The controller implementation limits the number of buffered jogging gcodes to ensure the machine can stop quickly.  Parameters: `axis` (axis number, x=0, y=1, etc), `inc` (amount to move, negative to move in reverse)
+* `move`: Send a basic movement gcode (G0/G1).  Parameters: `pos` (the position to move to, in array-of-numbers form), `feed` (feed rate)
+* `home`: Runs the machine homing sequence.  Parameters: `axes` (array of booleans; true in positions for the axes to home; if not present, all axes will be homed)
+* `setAbsolutePos`: Set absolute machine coordinate origin.  Parameters: `pos` (position to set absolute coordinates to, in number-array form; if not provided, origin is set to current position)
+* `probe`: Performs a probe.  Returns the position the probe tripped at, or throws an error if the probe does not trip.  Parameters: `pos` (position to probe toward in number-array format), `feed` (probe feed rate)
+* `setOrigin`: Sets the origin of one of the coordinate systems (ie, G10 L2).  Parameters: `coordSys` (which coordinate system to use, 0-G54, 1=G55, etc; if null, the current coordinate system is used), `pos` (position to set origin to; if null, current position is used)
+* `waitSync`: Waits until the controller has stopped running gcode before returning.
+* `getLog`: Fetches a section of the rotating log.  Parameters: `logType` ("comms" or "message"), `start` (starting line number to return, or null), `end` (ending line number to return, or null), `limit` (max line numbers to return)
+* `provideInput`: Respond to a server-side user input request.  Parameters: `inputId`, `value`
+* `cancelInput`: Cancel a user input request.  Parameters: `inputId`
+* `listFiles`: Returns a list of data files.
+* `uploadFile`: Upload a blob to the server as a data file.  Parameters: `filename` (remote name for the file), `data` (contents of file)
+* `startJob`: Start running a job.  Parameters: `filename` (source data filename), `macro` (generator macro name, used instead of a filename), `macroParams` (generator parameters), `rawFile` (if true, skip most gcode processing and just send to the controller), `gcodeProcessors` (an array of objects like `{ name: "gcode processor name", options: "gcode processor options" }`)
+* `jobDryRun`: Performs a job dry run.  Returns the results, including stats such as line count and predicted time.  Parameters: Same as `startJob`, with the addition of `outputFilename` (if provided, output processed gcode to this file)
+* `listMacros`: Returns a list of available macros and parameter schemas for each.
+* `runMacro`: Runs a macro.  Parameters: `macro` (macro name), `params` (macro parameters)
+
+Additional operations can be provided by plugins.
+
+
+## API
+
+TightCNC's API uses [JSON-RPC](https://www.jsonrpc.org/specification).  It's like REST in that it uses HTTP as a transport, but it does not constrain itself to only the methods and concepts that HTTP provides.  RPC-based APIs can be better suited to primarily
+imperative action-driven APIs with a variety of actions (REST is better for resource-driven object-access APIs).
+
+All API calls have the same HTTP wrapper:
+
+* Method: POST
+* URL: http://<host>:2363/v1/jsonrpc
+* Header Content-type: application/json
+* Header Authorization: Key <authKey>  (the auth key comes from the config file)
+
+The body is in JSON and has this format:
+
+```
+{
+	"method": <operation name>,
+	"params": { <operation parameters> }
+}
+```
+
+Responses are always HTTP 200's and are JSON objects.  The object contains either a `result` key or an `error` key, and looks like this:
+
+```
+{
+	"result": <operation result>,
+	"error": null
+}
+```
+
+## Gcode Processors
+
+Jobs in TightCNC can take advantage of gcode processors to modify the gcode, report back status, or interact with the user.  Several built-in
+gcode processors are used to provide features such as autoleveling and tool change handling.  Custon gcode processors can be provided in
+plugins.
+
+
+## Plugins
 
 
 
