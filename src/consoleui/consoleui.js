@@ -568,7 +568,7 @@ class ConsoleUI extends EventEmitter {
 					posStr += cstatus.pos[i].toFixed(posPrecision);
 				}
 				if (cstatus.mpos && typeof cstatus.mpos[i] === 'number') {
-					posStr += '{gray-fg}/' + cstatus.mpos[i].toFixed(posPrecision) + '{/gray-fg}';
+					posStr += '{cyan-fg}/' + cstatus.mpos[i].toFixed(posPrecision) + '{/cyan-fg}';
 				}
 				this.positionStatusBox.data[axis] = posStr;
 			}

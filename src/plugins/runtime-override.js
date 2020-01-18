@@ -146,11 +146,12 @@ module.exports.registerConsoleUIComponents = function (consoleui) {
 		let mult = await form.showEditor(null, {
 			type: 'number',
 			required: true,
+			label: 'Feed Multiplier',
 			validate: (v) => {
 				if (!v || v < 0) throw new commonSchema.FieldError('invalid', 'Feed multiplier must be a positive number');
 			}
 		}, objtools.getPath(consoleui, 'lastStatus.job.gcodeProcessors.runtimeoverride.feedMultiplier') || 1);
-		if (mult) {
+		if (mult && !form.editorCancelled) {
 			await consoleui.client.op('setFeedMultiplier', { feedMultiplier: mult });
 		}
 	};
