@@ -28,6 +28,8 @@ Its features include:
 TightCNC is not designed to be an all-in-one CAD/CAM/Sender package; it is strictly focused on post-CAM processing and machine interfacing.  Nearly all operations
 are handled server-side, so things like UI crashes are not an issue for ongoing jobs.
 
+![TightCNC Screenshot](/images/consoleui/control-mode.png)
+
 ## Supported Devices
 
 Currently, support for different types of devices is lacking - only TinyG (and probably g2core, but not tested) is supported (because that's the
@@ -114,6 +116,8 @@ Additionally, certain actions will cause overlay dialogs to pop up which can be 
 
 ### Home Screen
 
+![Home Screen](/images/consoleui/home-screen.png)
+
 The home screen is pretty much blank except for a splash message.  It is the launching point to get to the different
 modes.
 
@@ -123,6 +127,8 @@ If an interactive component on the server has requested user input and has been 
 be highlighted.  In this case, hitting `i` will activate the minimized request for user input.
 
 ### Control Mode
+
+![Control Mode](/images/consoleui/control-mode.png)
 
 Hitting `c` on the home screen goes to control mode.  This mode provides the ability to manually control the machine in real time (for example, jogging).
 There are quite a few keybinds in this mode.  The keybinds can be edited in the config file to customize it according to your needs (eg. to remap axes, or add macros).  Additional keybinds
@@ -151,10 +157,14 @@ Here are the functions with default keybinds:
 
 ### Log Mode
 
+![Log Mode](/images/consoleui/log-mode.png)
+
 Hitting `l` on the home screen enters log mode.  This mode displays traffic to and from the device, as well as messages from the server.  It also contains a text box to
 send lines to the controller.  Type and hit Enter to send.
 
 ### New Job Mode
+
+![New Job Mode](/images/consoleui/new-job.png)
 
 Hitting `n` on the home screen enters new job mode.  This mode allows you to configure and run jobs.  The current job configuration is displayed on screen, as well as results from a job dry run (if available).
 
@@ -172,6 +182,8 @@ The `s` key will start the job.  A dry run is automatically performed before act
 After the job has been started, it will automatically switch over to job info mode.
 
 ### Job Info Mode
+
+![Job Info Mode](/images/consoleui/job-info.png)
 
 Hitting `j` on the home screen goes to job info mode.  This mode displays detailed information about current job progress.  This is also where
 interactive job functions such as tool change, job stops, and feed override are used.  Hotkeys for these functions will appear when they are available.
@@ -210,6 +222,8 @@ will always start at 0%.
 
 ### Autolevel
 
+![Autolevel Settings](/images/consoleui/surface-map-dialog.png)
+
 Autoleveling uses a probe to map out raised areas on a surface, then adjusts job gcode to account for surface warpage.  The TightCNC autoleveling
 implementation has a few extra features:
 
@@ -226,6 +240,8 @@ select 'Run Surface Map' to begin the process.
 Make sure your probing setup is working before you start this process.  The probe can be tested in control mode.
 
 ### Tool Change
+
+![Tool Change Settings](/images/consoleui/tool-change-dialog.png)
 
 This option will intercept tool change gcode M6 and T, as well as job stop gcodes M0 and M1.
 
@@ -281,6 +297,27 @@ tightcnc send G0X50Y30
 tightcnc op probe -p pos='[ null, null, -2 ]' -p feed=45
 
 tightcnc job -f myfile.nc -p recoverytracker:recoverySaveInterval=10
+```
+
+```
+$ ./bin/cli.js --help
+cli.js <command>
+
+Commands:
+  cli.js status         Get current status information       [aliases: stat, st]
+  cli.js hold           Feed hold
+  cli.js resume         Resume from feed hold
+  cli.js cancel         Cancel running operations
+  cli.js send <line>    Send a gcode line
+  cli.js op <opname>    Run a given operation
+  cli.js upload <file>  Upload a file
+  cli.js job            Start a job
+
+Options:
+  --version  Show version number                                       [boolean]
+  --format   Command output format
+              [string] [choices: "text", "json", "jsonpretty"] [default: "text"]
+  --help     Show help                                                 [boolean]
 ```
 
 
