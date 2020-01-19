@@ -443,12 +443,72 @@ Responses are always HTTP 200's and are JSON objects.  The object contains eithe
 ## Gcode Processors
 
 Jobs in TightCNC can take advantage of gcode processors to modify the gcode, report back status, or interact with the user.  Several built-in
-gcode processors are used to provide features such as autoleveling and tool change handling.  Custon gcode processors can be provided in
+gcode processors are used to provide features such as autoleveling and tool change handling.  Custom gcode processors can be provided in
 plugins.
+
+Gcode processors are specified as part of the `startJob` operation parameters.  Each one has a name and a set of parameters it accepts.
+
+Custom gcode processors can be added as plugins.  The bundled gcode processors are also implemented as plugins for [autolevel](https://github.com/crispy1989/tightcnc/blob/master/src/plugins/autolevel.js), [job recovery](https://github.com/crispy1989/tightcnc/blob/master/src/plugins/job-recovery.js),
+[runtime feed override](https://github.com/crispy1989/tightcnc/blob/master/src/plugins/runtime-override.js), [tool change](https://github.com/crispy1989/tightcnc/blob/master/src/plugins/tool-change.js).
+
+### Building Gcode Processors
+
+Custom gcode processors can be added as plugins.  Gcode processors are subclasses of the [GcodeProcessor](https://github.com/crispy1989/tightcnc/blob/master/lib/gcode-processor.js) class, which itself is a subclass of a Node.JS `Transform` stream.
+Internally, a gcode processor is just a `Transform` stream operating on instances of [GcodeLine](https://github.com/crispy1989/tightcnc/blob/master/lib/gcode-line.js).  There are a few helper methods to help with wrapping the gcode lines.
+
+Here's an example gcode processor as a plugin.  It simply doubles all X and Y coordinates found, enlarging a job by a factor of 2.
+
+```js
+const { GcodeProcessor } = require('tightcnc');
+
+class SizeDouber extends GcodeProcessor {
+	processGcode(gline) {
+		if (gline.has('X')) gline.set('X', gline.get('X') * 2);
+		if (gline.has('Y')) gline.set('Y', gline.get('Y') * 2);
+		return gline;
+	}
+}
+
+module.exports.registerServerComponents = function (tightcnc) {
+	tightcnc.registerGcodeProcessor('sizedoubler', SizeDoubler);
+};
+```
 
 
 ## Plugins
 
+TightCNC can be augmented by installing external plugins.  Plugins can add gcode processors, register new operations, add new console ui components, and
+generally augment the internals of the server and consoleui client.  Currently, the only plugins that exist are the [built-in ones](), but new plugins
+can easily be added externally.
 
+Plugins can be installed using `npm`.  Plugins that are published can be installed with `npm install`, and local ones can be installed with `npm link`.  TightCNC
+just has to be able to `require()` the plugin.
+
+After installing the plugin, it must be added to the `plugins` array in the TightCNC configuration to be loaded.
+
+A plugin exports two functions: `registerServerComponents(tightcnc)` and `registerConsoleUIComponents(consoleui)`.  Both functions are optional.
+These functions are called on server/client startup to register whatever is needed.  An example of a plugin registering a gcode processor
+is above.  Take a look at the [built-in plugins](https://github.com/crispy1989/tightcnc/tree/master/src/plugins) for more examples of how to plug in to TightCNC and interact with the user.
+
+
+## TinyG/G2Core
+
+Currently, both TinyG and G2core should be supported, but only TinyG is tested.  TightCNC's TinyG implementation is optimized to
+take advantage of the tinyg's internal feedback to track a gcode line's progress through the various queues until it is executed.
+This information is made available through events and can be taken advantage of by other components.
+
+When the TinyG controller initializes, it configures ccertain device parameters.  If you are using your device with
+other control software, make sure it is compatible with these settings, or record your current values of these
+settings so they can be restored if needed.
+
+The settings currently configured on startup are:
+
+* $js=0 - Output abbreviated json
+* $ee=0 - Turn off echo (this should generally already be off before starting TightCNC)
+* $jv=4 - Json verbosity setting
+* $sv=1 - Enable filtered automatic status reports
+* $qv=2 - Enable triple queue reports
+* $si=250 - Status report interval (or from config)
+* $sr - Sets status report fields
 
 

@@ -40,6 +40,9 @@ controllers:
     # Which of the axes can be homed
     homableAxes: [ true, true, true ]
 
+# A list of plugin names to load
+plugins: []
+
 # Note: If you plan to use autolevel, job recovery, tool change, or any other plugin, see the corresponding documentation for config examples.
 # The configuration for these can be crucial to prevent machine mishaps.
 
