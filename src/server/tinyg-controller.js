@@ -58,6 +58,7 @@ class TinyGController extends Controller {
 		// - gcode - If this is gcode, a GcodeLine instance representing this line.
 		// - goesToPlanner - A boolean value that indicates how many entries this is expected to take on the planner queue (round up to highest estimate)
 		// - responseExpected - If an ack is expected from the device
+		// - fullSync - If true, only send block once all previous blocks have finished executing, and only send next block once this has exceuted.  Used for lines that modify eeprom.
 		// Note that the sendQueue does not contain "front panel control" instructions like feed hold, as these are sent and processed immediately, and give no feedback.
 		this.sendQueue = [];
 		// This is the index into sendQueue of the next entry to send to the device.  Can be 1 past the end of the queue if there are no lines queued to be sent.
@@ -150,15 +151,20 @@ class TinyGController extends Controller {
 	_commsSyncPlannerMirror() {
 		//this.debug('_commsSyncPlannerMirror()');
 		// shift everything off the planner queue
+		let syncedAny = false;
 		while (this.plannerMirror.length > 0) {
 			this._commsShiftPlannerMirror();
+			syncedAny = true;
 		}
 		// if there's anything left in sendQueue that never made its way onto the planner queue after being acked (ie, no qr was received after), handle that
 		if (this.sendQueueIdxToReceive > 0) {
 			this.plannerMirror.push([ this.sendQueue[0].lineid, this.sendQueue[this.sendQueueIdxToReceive - 1].lineid ]);
 			this._commsCallExecutingHooks();
 			this._commsShiftPlannerMirror();
+			syncedAny = true;
 		}
+		// If any were handled, check if more need to be sent
+		if (syncedAny) this._checkSendLoop();
 	}
 
 	// Marks the front entry of the planner queue as executed and shifts it off the queue
@@ -319,6 +325,15 @@ class TinyGController extends Controller {
 	// Checks the send queue to see if there's anything more that can be sent to the device.  Returns true if it can.
 	_checkSendToDevice() {
 		if (this._disableSending) return false; // don't send anything more until state has synchronized
+		// Don't send in cases where line requests fullSync
+		if (this.sendQueue.length > this.sendQueueIdxToSend && this.sendQueueIdxToSend > 0 && this.sendQueue[this.sendQueueIdxToSend].fullSync) {
+			// If next line to send requires fullSync, do not send it until the rest of sendQueue is empty (indicating all previously sent lines have been executed)
+			return false;
+		}
+		if (this.sendQueue.length && this.sendQueue[0].fullSync) {
+			// If a fullSync line is currently running, do not send anything more until it finishes
+			return false;
+		}
 		// Don't send more if we haven't received responses for more than a threshold number
 		const maxUnackedRequests = this.config.maxUnackedRequests || 32;
 		let numUnackedRequests = this.sendQueueIdxToSend - this.sendQueueIdxToReceive;
@@ -355,15 +370,16 @@ class TinyGController extends Controller {
 			this.sendQueueIdxToSend++;
 			if (this.sendImmediateCounter > 0) this.sendImmediateCounter--;
 		}
-		//this.debug('_checkSendLoop() call _checkSynced');
-		this._checkSynced();
 
 		// If the next entry queued to receive a response doesn't actually expect a response, generate a "fake" response for it
 		// Since _commsHandleAckResponseReceived() calls _checkSendLoop() after it's finished, this process continues for subsequent entries
-		if (this.sendQueueIdxToReceive < this.sendQueueIdxToSend && !this.sendQueue[this.sendQueueIdxToReceive].responseExpected) {
+		while (this.sendQueueIdxToReceive < this.sendQueueIdxToSend && !this.sendQueue[this.sendQueueIdxToReceive].responseExpected) {
 			//this.debug('_checkSendLoop() call _commsHandleAckResponseReceived');
 			this._commsHandleAckResponseReceived({});
 		}
+
+		//this.debug('_checkSendLoop() call _checkSynced');
+		this._checkSynced();
 	}
 
 	// Pushes a block of data onto the send queue.  The block is in the format of send queue entries.  This function cannot be used with
@@ -548,7 +564,8 @@ class TinyGController extends Controller {
 			str: gline.toString(),
 			hooks: hooks,
 			gcode: gline,
-			goesToPlanner: this._gcodeLineRequiresPlanner(gline)
+			goesToPlanner: this._gcodeLineRequiresPlanner(gline),
+			fullSync: this._gcodeLineRequiresSync(gline)
 		}, options.immediate);
 	}
 
@@ -577,7 +594,8 @@ class TinyGController extends Controller {
 			str: str,
 			hooks: options.hooks,
 			gcode: null,
-			goesToPlanner: 0
+			goesToPlanner: 0,
+			fullSync: true
 		}, options.immediate);
 	}
 
@@ -616,6 +634,12 @@ class TinyGController extends Controller {
 			return 4;
 		}
 		return 0;
+	}
+
+	// Returns true if a given gcode line should have the controller fully synced before and after executed
+	// Used for any gcodes that modify EEPROM
+	_gcodeLineRequiresSync(gline) {
+		return gline.has('G10') || gline.has('G28.1') || gline.has('G30.1') || gline.get('G', 'G54') || gline.has('G28') || gline.has('G30');
 	}
 
 	_writeToSerial(str) {
@@ -907,11 +931,11 @@ class TinyGController extends Controller {
 			(this.sendQueueIdxToSend >= this.sendQueue.length || this._disableSending);
 		if (nowSynced !== wasSynced) {
 			this.debug('Is now synced');
+			this.synced = nowSynced;
 			if (nowSynced) {
 				// Extra check to automatically call hooks on all gcode blocks in the planner when the machine stops
 				this._commsSyncPlannerMirror();
 			}
-			this.synced = nowSynced;
 			this.emit('statusUpdate');
 		}
 	}
