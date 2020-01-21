@@ -97,6 +97,11 @@ class TinyGController extends Controller {
 		this.realTimeMovesTimeStart = [ 0, 0, 0, 0, 0, 0 ];
 		this.realTimeMovesCounter = [ 0, 0, 0, 0, 0, 0 ];
 
+		this.receivedLineCounter = 0; // is incremented each time a line is received
+		this.lastResponseReceivedCounter = null; // set to receivedLineCounter when response is received
+		this.lastStatusReportCounter = null; // set to receivedLineCounter when status report is received
+		this.lastResponseReceivedTime = null; // set to a Date object when a response is received
+
 		this._serialListeners = {}; // mapping from serial port event names to listener functions; used to remove listeners during cleanup
 	}
 
@@ -125,6 +130,10 @@ class TinyGController extends Controller {
 		this.plannerMirror = [];
 		this.sendQueueIdxToRecvAtLastQr = 0;
 		this.lastQrNumFree = 28;
+		this.receivedLineCounter = 0;
+		this.lastResponseReceivedCounter = null;
+		this.lastStatusReportCounter = null;
+		this.lastResponseReceivedTime = null;
 	}
 
 	// Calls executing hooks corresponding to front entry in planner mirror
@@ -301,7 +310,7 @@ class TinyGController extends Controller {
 			// If we're not expecting this to go onto the planner queue, splice it out of the list now.  Otherwise,
 			// increment the receive pointer.
 			const everythingToPlanner = true; // makes gline hooks execute in order
-			if (entry.goesToPlanner || everythingToPlanner) {
+			if (entry.goesToPlanner || (everythingToPlanner && this.sendQueueIdxToReceive > 0)) {
 				this.sendQueueIdxToReceive++;
 			} else {
 				this.sendQueue.splice(this.sendQueueIdxToReceive, 1);
@@ -330,7 +339,7 @@ class TinyGController extends Controller {
 			// If next line to send requires fullSync, do not send it until the rest of sendQueue is empty (indicating all previously sent lines have been executed)
 			return false;
 		}
-		if (this.sendQueue.length && this.sendQueue[0].fullSync) {
+		if (this.sendQueue.length && this.sendQueue[0].fullSync && this.sendQueueIdxToSend > 0) {
 			// If a fullSync line is currently running, do not send anything more until it finishes
 			return false;
 		}
@@ -925,18 +934,37 @@ class TinyGController extends Controller {
 		// 1. The machine is stopped (the last status report indicated a machine status of such)
 		// 2. There are no sent lines for which responses have not been received.
 		// 3. There is nothing queued to be sent (or sending is paused)
+		// 4. We're sure our last received status report is up to date (either we've received a sr since the last response, or it has been more than X amount of time since last response)
 		let wasSynced = this.synced;
+		const respTimeThreshold = 500;
+		let exceededRespTimeThreshold = this.lastResponseReceivedTime.getTime() + respTimeThreshold <= new Date().getTime();
+		let hasReliableSR = this.lastStatusReportCounter !== null && (this.lastResponseReceivedCounter === null || this.lastStatusReportCounter >= this.lastResponseReceivedCounter || this.lastResponseReceivedTime === null || exceededRespTimeThreshold);
 		let nowSynced = (this.currentStatusReport.stat === 3 || this.currentStatusReport.stat === 4 || this.currentStatusReport.stat === 1) &&
 			this.sendQueueIdxToReceive >= this.sendQueueIdxToSend &&
-			(this.sendQueueIdxToSend >= this.sendQueue.length || this._disableSending);
+			(this.sendQueueIdxToSend >= this.sendQueue.length || this._disableSending) &&
+			hasReliableSR;
 		if (nowSynced !== wasSynced) {
-			this.debug('Is now synced');
+			if (nowSynced) this.debug('Is now synced');
+			else this.debug('No longer synced');
 			this.synced = nowSynced;
 			if (nowSynced) {
 				// Extra check to automatically call hooks on all gcode blocks in the planner when the machine stops
 				this._commsSyncPlannerMirror();
 			}
 			this.emit('statusUpdate');
+		}
+		if (!nowSynced && !hasReliableSR && !exceededRespTimeThreshold && !this._timeoutCheckSynced) {
+			// if the reason we're not synced is because it hasn't been long enough since the last response, set a timer to check again
+			this._timeoutCheckSynced = true;
+			setTimeout(() => {
+				this._timeoutCheckSynced = false;
+				if (this.synced || !this.serial) return;
+				try {
+					this._checkSynced();
+				} catch (err) {
+					this.emit('error', err);
+				}
+			}, respTimeThreshold / 2);
 		}
 	}
 
@@ -985,6 +1013,7 @@ class TinyGController extends Controller {
 	_handleReceiveSerialDataLine(line) {
 		//this.debug('receive line ' + line);
 		this.emit('received', line);
+		this.receivedLineCounter++;
 		if (line[0] != '{') throw new XError(XError.PARSE_ERROR, 'Error parsing received serial line', { data: line });
 		let data = AbbrJSON.parse(line);
 
@@ -1025,6 +1054,7 @@ class TinyGController extends Controller {
 		if ('sr' in data) {
 			// Update the current status variables
 			for (let key in data.sr) statusVars[key] = data.sr[key];
+			this.lastStatusReportCounter = this.receivedLineCounter;
 		}
 		if ('qr' in data) {
 			// Update queue report
@@ -1040,9 +1070,12 @@ class TinyGController extends Controller {
 		}
 		let responseStatusCode = null;
 		if ('r' in data) {
+			this.lastResponseReceivedCounter = this.receivedLineCounter;
+			this.lastResponseReceivedTime = new Date();
 			if ('sr' in data.r) {
 				// Update the current status variables
 				for (let key in data.r.sr) statusVars[key] = data.r.sr[key];
+				this.lastStatusReportCounter = this.receivedLineCounter;
 			}
 			if ('n' in data.r) {
 				// Update gcode line number
@@ -1259,6 +1292,8 @@ class TinyGController extends Controller {
 				}
 			}
 		}
+		// Fetch status report
+		await this.request({ sr: null });
 		this.debug('initMachine() finished');
 	}
 
