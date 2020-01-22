@@ -663,7 +663,7 @@ class TinyGController extends Controller {
 
 	// Temporarily disable sending anything to the machine for a period of time to wait for it to catch up or something
 	_tempDisableSending(time = 3500) {
-		this.debug('_tempDisableSending')
+		this.debug('_tempDisableSending');
 		let origDisableSending = this._disableSending;
 		this._disableSending = true;
 		setTimeout(() => {
@@ -937,20 +937,21 @@ class TinyGController extends Controller {
 		// 4. We're sure our last received status report is up to date (either we've received a sr since the last response, or it has been more than X amount of time since last response)
 		let wasSynced = this.synced;
 		const respTimeThreshold = 500;
-		let exceededRespTimeThreshold = this.lastResponseReceivedTime.getTime() + respTimeThreshold <= new Date().getTime();
+		let exceededRespTimeThreshold = this.lastResponseReceivedTime && this.lastResponseReceivedTime.getTime() + respTimeThreshold <= new Date().getTime();
 		let hasReliableSR = this.lastStatusReportCounter !== null && (this.lastResponseReceivedCounter === null || this.lastStatusReportCounter >= this.lastResponseReceivedCounter || this.lastResponseReceivedTime === null || exceededRespTimeThreshold);
-		let nowSynced = (this.currentStatusReport.stat === 3 || this.currentStatusReport.stat === 4 || this.currentStatusReport.stat === 1) &&
+		let machineSynced = (this.currentStatusReport.stat === 3 || this.currentStatusReport.stat === 4 || this.currentStatusReport.stat === 1) &&
 			this.sendQueueIdxToReceive >= this.sendQueueIdxToSend &&
-			(this.sendQueueIdxToSend >= this.sendQueue.length || this._disableSending) &&
 			hasReliableSR;
+		// only consider things truly synced if the machine has synchronized to our instructions, and we have no more instructions to give it
+		// but we still need to track machineSynced for proper planner mirror syncing behavior
+		let nowSynced = machineSynced &&
+			(this.sendQueueIdxToSend >= this.sendQueue.length || this._disableSending);
+		// Call hooks on all gcode lines once machine has stopped (fixes some desyncs with queue reports)
+		if (machineSynced) this._commsSyncPlannerMirror();
 		if (nowSynced !== wasSynced) {
 			if (nowSynced) this.debug('Is now synced');
 			else this.debug('No longer synced');
 			this.synced = nowSynced;
-			if (nowSynced) {
-				// Extra check to automatically call hooks on all gcode blocks in the planner when the machine stops
-				this._commsSyncPlannerMirror();
-			}
 			this.emit('statusUpdate');
 		}
 		if (!nowSynced && !hasReliableSR && !exceededRespTimeThreshold && !this._timeoutCheckSynced) {
