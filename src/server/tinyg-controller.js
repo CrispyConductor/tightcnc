@@ -188,15 +188,20 @@ class TinyGController extends Controller {
 			while (this.sendQueue.length > 0 && this.sendQueue[0].lineid <= topLineId) {
 				//this.debug('shifting sendQueue');
 				let sqEntry = this.sendQueue.shift();
-				// run hooks if present
-				if (sqEntry.hooks) {
-					sqEntry.hooks.triggerSync('executed', sqEntry);
-				}
 				// adjust pointers after shifting
 				this.sendQueueIdxToSend--;
 				this.sendQueueIdxToReceive--;
 				this.sendQueueIdxToRecvAtLastQr--;
-				if (this.sendQueueIdxToRecvAtLastQr < 0) this.sendQueueIdxToRecvAtLastQr = 0;
+				if (this.sendQueueIdxToRecvAtLastQr < 0) this.sendQueueIdxToRecvAtLastQr = 0; // necessary to handle some cases
+				// these are not necessary as long as the algorithm is functioning properly; so they are left commented here so problems don't stay hidden
+				//if (this.sendQueueIdxToReceive < 0) this.sendQueueIdxToReceive = 0;
+				//if (this.sendQueueIdxToSend < 0) this.sendQueueIdxToSend = 0;
+
+				// run hooks if present
+				if (sqEntry.hooks) {
+					sqEntry.hooks.triggerSync('executed', sqEntry);
+				}
+
 			}
 		}
 		// Call executing hooks corresponding to next planner queue entry
@@ -433,7 +438,7 @@ class TinyGController extends Controller {
 			if (this.sendQueue.length > this.sendQueueIdxToSend) {
 				// There are more entries queued to be sent
 				let lineidNextSent = this.sendQueue[this.sendQueueIdxToSend].lineid;
-				newLineId = (lineidNextSent - lineidLastSent) / 2;
+				newLineId = (lineidNextSent + lineidLastSent) / 2;
 			} else {
 				// There are not yet any more entries queued to be sent
 				newLineId = this.lineIdCounter++;
