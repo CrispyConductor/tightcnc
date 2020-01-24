@@ -585,4 +585,10 @@ The settings currently configured on startup are:
 * $si=250 - Status report interval (or from config)
 * $sr - Sets status report fields
 
+It is highly recommended that you use RTS/CTS (hardware flow control) when using TightCNC's default configuration.  The aggressive sending algorithm
+can sometimes overfill the controller's receive buffer.  This isn't an issue with hardware flow control enabled, but without it, this can lead
+to datastream corruption.  If you cannot use hardware flow control, you should probably disable the aggressive sending algorithm by setting
+`controllers.TinyG.maxUnackedRequests` to `8` (in the config).
+
+
 
