@@ -14,6 +14,7 @@ class Controller extends EventEmitter {
 	 *   - ready - When the connection is ready for use.
 	 *   - sent - When raw data is sent, argument should be raw data string. (newline may be absent)
 	 *   - received - When raw data is received, argument should be raw data string. (newline may be absent)
+	 *   - error - Self-explanatory
 	 *
 	 * @class Controller
 	 * @constructor
