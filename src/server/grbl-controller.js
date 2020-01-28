@@ -60,6 +60,8 @@ class GRBLController extends Controller {
 		this.grblDeviceVersion = null; // main device version, from welcome message
 		this.grblVersionDetails = null; // version details, from VER feedback message
 		this.grblBuildOptions = {}; // build option flags and values, from OPT feedback message
+
+		this._lastRecvSrOrAck = null; // used as part of sync detection
 	}
 
 	_getCurrentMachineTime() {
@@ -95,6 +97,7 @@ class GRBLController extends Controller {
 		this.sendQueueIdxToReceive = 0;
 		this.unackedCharCount = 0;
 		this.sendImmediateCounter = 0;
+		this.emit('_sendQueueDrain');
 	}
 
 	getPos() {
@@ -308,8 +311,9 @@ class GRBLController extends Controller {
 			}
 		}
 
-		this.emit('statusReportReceived', statusReport);
+		this._lastRecvSrOrAck = 'sr';
 		this._handleStatusUpdate(obj);
+		this.emit('statusReportReceived', statusReport);
 	}
 
 	_handleSettingFeedback(setting, value) {
@@ -326,6 +330,7 @@ class GRBLController extends Controller {
 		if (setting === 111) this.axisMaxFeeds[1] = value;
 		if (setting === 112) this.axisMaxFeeds[2] = value;
 		// TODO: handle storing max accel, as well as max travel
+		// TODO: sync to gcode vm
 		// fire event
 		if (value !== oldVal) {
 			this.emit('statusUpdate');
@@ -361,6 +366,7 @@ class GRBLController extends Controller {
 
 		// Check for ok
 		if (this._regexOk.test(line)) {
+			this._lastRecvSrOrAck = 'ack';
 			this._commsHandleAckResponseReceived();
 			return;
 		}
@@ -378,6 +384,7 @@ class GRBLController extends Controller {
 		// Check for error
 		matches = this._regexError.exec(line);
 		if (matches) {
+			this._lastRecvSrOrAck = 'ack';
 			let errInfo = matches[1];
 			if (errInfo && !isNaN(errInfo)) errInfo = parseInt(errInfo);
 			this._commsHandleAckResponseReceived(errInfo);
@@ -450,8 +457,9 @@ class GRBLController extends Controller {
 		}
 
 		// Check if it's parser state feedback
-		if (this._regexParserState.test(line)) {
-			// ignore
+		matches = this._regexParserState.exec(line);
+		if (matches) {
+			this._handleDeviceParserUpdate(matches[1]);
 			return;
 		}
 
@@ -471,6 +479,44 @@ class GRBLController extends Controller {
 
 		// Unmatched line
 		console.error('Received unknown line from grbl: ' + line);
+	}
+
+	_handleDeviceParserUpdate(str) {
+		// Ignore this if there's anything in the sendQueue with gcode attached (so we know the controller's parser is in sync)
+		for (let entry of this.sendQueue) {
+			if (entry.gcode) return;
+		}
+
+		// Parse the whole response as a gcode line and run it through the gcode vm
+		let gline = new GcodeLine(str);
+		this.timeEstVM.runGcodeLine(gline);
+
+		let statusUpdates = {};
+
+		// Fetch gcodes from each relevant modal group and update state vars accordingly
+		let activeCoordSys = gline.get('G', 'G54');
+		if (activeCoordSys) statusUpdates.activeCoordSys = activeCoordSys - 54;
+		let unitCode = gline.get('G', 'G20');
+		if (unitCode) statusUpdates.units = (unitCode === 20) ? 'in' : 'mm';
+		let incrementalCode = gline.get('G', 'G90');
+		if (incrementalCode) statusUpdates.incremental = incrementalCode === 91;
+		let feedMode = gline.get('G', 'G93');
+		if (feedMode) statusUpdates.inverseFeed = feedMode === 93;
+		let spindleMode = gline.get('M', 'M5');
+		if (spindleMode === 3) { statusUpdates.spindle = true; statusUpdates.spindleDirection = 1; }
+		if (spindleMode === 4) { statusUpdates.spindle = true; statusUpdates.spindleDirection = -1; }
+		if (spindleMode === 5) statusUpdates.spindle = false;
+		let coolantMode = gline.get('M', 'M7');
+		if (coolantMode === 7) statusUpdates.coolant = 1;
+		if (coolantMode === 8) statusUpdates.coolant = 2;
+		if (coolantMode === 9) statusUpdates.coolant = false;
+		let feed = gline.get('F');
+		if (typeof feed === 'number') statusUpdates.feed = feed;
+		let spindleSpeed = gline.get('S');
+		if (typeof spindleSpeed === 'number') statusUpdates.spindleSpeed = spindleSpeed;
+
+		// Perform status updates
+		this._handleStatusUpdate(statusUpdates);
 	}
 
 	_handleDeviceParameterUpdate(name, value) {
@@ -676,40 +722,25 @@ class GRBLController extends Controller {
 			};
 			for (let eventName in this._serialListeners) this.serial.on(eventName, this._serialListeners[eventName]);
 
-			// This handles the case that the app might have been killed with a partially sent serial buffer.  Send a newline
-			// to "flush" it, then wait a short period of time for any possible response to be received (and ignored).
-			this._writeToSerial('\n');
 			this._welcomeMessageWaiter = pasync.waiter();
-			await pasync.setTimeout(500);
-			setTimeout(() => {
-				if (initializationPauseWaiter) {
-					initializationPauseWaiter.resolve();
-					initializationPauseWaiter = null;
-				}
-			}, 500);
-			const pauseCancelRunningOpsHandler = (err) => {
-				if (initializationPauseWaiter) {
-					initializationPauseWaiter.reject(err);
-					initializationPauseWaiter = null;
-				}
-			};
-			this.on('cancelRunningOps', pauseCancelRunningOpsHandler);
-			try {
-				await initializationPauseWaiter.promise;
-			} finally {
-				this.removeListener('cancelRunningOps', pauseCancelRunningOpsHandler);
-			}
-
-			// Wait for the welcome message to be received
+			
+			// Wait for the welcome message to be received; if not received in 5 seconds, send a soft reset
 			const welcomeWaitCancelRunningOpsHandler = (err) => {
 				if (this._welcomeMessageWaiter) {
 					this._welcomeMessageWaiter.reject(err);
 				}
 			};
 			this.on('cancelRunningOps', welcomeWaitCancelRunningOpsHandler);
+			let finishedWelcomeWait = false;
+			setTimeout(() => {
+				if (!finishedWelcomeWait) {
+					this.serial.write('\x18');
+				}
+			}, 5000);
 			try {
 				await this._welcomeMessageWaiter.promise;
 			} finally {
+				finishedWelcomeWait = true;
 				this.removeListener('cancelRunningOps', welcomeWaitCancelRunningOpsHandler);
 			}
 
@@ -728,6 +759,7 @@ class GRBLController extends Controller {
 		doInit()
 			.catch((err) => {
 				this.debug('initConnection() error ' + err);
+				console.log(err);
 				this.emit('error', new XError(XError.COMM_ERROR, 'Error initializing connection', err));
 				this.close(err);
 				this._initializing = false;
@@ -832,10 +864,15 @@ class GRBLController extends Controller {
 		await this.request('$#');
 	}
 
+	async fetchUpdateParserParameters() {
+		await this.request('$G');
+	}
+
 	async _initMachine() {
 		await this.fetchUpdateParameters();
 		await this.fetchUpdateSettings();
 		await this.fetchUpdateStatusReport();
+		await this.fetchUpdateParserParameters();
 		this.timeEstVM.syncStateToMachine({ controller: this });
 		this._startStatusUpdateLoops();
 	}
@@ -914,6 +951,7 @@ class GRBLController extends Controller {
 			this.lastLineExecutingTime = this._getCurrentMachineTime();
 			if (entry.hooks) entry.hooks.triggerSync('executing', entry);
 		}
+		if (!this.sendQueue.length) this.emit('_sendQueueDrain');
 	}
 
 	_commsHandleAckResponseReceived(error = null) {
@@ -967,11 +1005,14 @@ class GRBLController extends Controller {
 				// No response is expected, or we're at the head of the sendQueue.  So splice the entry out of the queue and call the relevant hooks.
 				this.sendQueue.splice(this.sendQueueIdxToReceive, 1);
 				this.sendQueueIdxToSend--; // need to adjust this for the splice
+				// Run through VM
+				if (entry.gcode) this.timeEstVM.runGcodeLine(entry.gcode);
 				if (entry.hooks) {
 					this.lastLineExecutingTime = this._getCurrentMachineTime();
 					entry.hooks.triggerSync('executing', entry);
 					entry.hooks.triggerSync('executed', entry);
 				}
+				if (!this.sendQueue.length) this.emit('_sendQueueDrain');
 			}
 		} else {
 			// Got an error on the request.  Splice it out of sendQueue, and call the error hook on the gcode line
@@ -980,6 +1021,7 @@ class GRBLController extends Controller {
 			if (entry.hooks) {
 				entry.hooks.triggerSync('error', new XError(XError.INTERNAL_ERROR, 'Received error code from request to GRBL: ' + error));
 			}
+			if (!this.sendQueue.length) this.emit('_sendQueueDrain');
 		}
 
 		this._commsCheckExecutedLoop();
@@ -994,12 +1036,13 @@ class GRBLController extends Controller {
 			this._writeToSerial(entry.str + '\n');
 			entry.charCount = entry.str.length + 1;
 			this.unackedCharCount += entry.charCount;
+			this.sendQueueIdxToSend++;
+			if (this.sendImmediateCounter > 0) this.sendImmediateCounter--;
+
 			if (entry.hooks) {
 				entry.hooks.triggerSync('sent', entry);
 			}
 			this.emit('sent', entry.str);
-			this.sendQueueIdxToSend++;
-			if (this.sendImmediateCounter > 0) this.sendImmediateCounter--;
 		}
 
 		// If the next entry queued to receive a response doesn't actually expect a response, generate a "fake" response for it
@@ -1107,6 +1150,97 @@ class GRBLController extends Controller {
 
 	_updateStateFromGcode(gline) {
 		// Do not update state components that we have definite values for from status reports based on if we've ever received such a key in this.currentStatusReport
+
+		let statusUpdates = {};
+
+		// Need to handle F even in the case of simple moves (in case grbl doesn't report it back to us), so do that first
+		if (gline.has('F') && !('F' in this.currentStatusReport || 'FS' in this.currentStatusReport)) {
+			statusUpdates.feed = gline.get('F');
+		}
+
+		// Shortcut case for simple common moves which don't need to be tracked here
+		let isSimpleMove = true;
+		for (let word of gline.words) {
+			if (word[0] === 'G' && word[1] !== 0 && word[1] !== 1) { isSimpleMove = false;  break; }
+			if (word[0] !== 'G' && word[0] !== 'X' && word[0] !== 'Y' && word[0] !== 'Z' && word[0] !== 'A' && word[0] !== 'B' && word[0] !== 'C' && word[0] !== 'F') {
+				isSimpleMove = false;
+				break;
+			}
+		}
+		if (isSimpleMove) {
+			this._handleStatusUpdate(statusUpdates);
+			return;
+		}
+
+		let zeropoint = [];
+		for (let i = 0; i < this.axisLabels.length; i++) zeropoint.push(0);
+
+		if (gline.has('G10') && gline.has('L2') && gline.has('P')) {
+			let csys = gline.get('P') - 1;
+			statusUpdates['coordSysOffsets.' + csys] = [];
+			for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) {
+				let axis = this.axisLabels[axisNum].toUpperCase();
+				let val = 0;
+				if (gline.has(axis)) val = gline.get(axis);
+				statusUpdates['coordSysOffsets.' + csys][axisNum] = val;
+			}
+		}
+		if (gline.has('G20') || gline.has('G21')) {
+			statusUpdates.units = gline.has('G20') ? 'in' : 'mm';
+		}
+		if (gline.has('G28.1') || gline.has('G30.1')) {
+			let posnum = gline.has('G28.1') ? 0 : 1;
+			statusUpdates['storedPositions.' + posnum] = this.mpos.slice();
+		}
+		let csysCode = gline.get('G', 'G54');
+		if (csysCode && csysCode >= 54 && csysCode <= 59 && Math.floor(csysCode) === csysCode) {
+			statusUpdates.activeCoordSys = csysCode - 54;
+		}
+		if (gline.has('G90') || gline.has('G91')) {
+			statusUpdates.incremental = gline.has('G91');
+		}
+		if (gline.has('G92')) {
+			statusUpdates.offset = [];
+			for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) {
+				let axis = this.axisLabels[axisNum].toUpperCase();
+				if (gline.has(axis)) statusUpdates.offset[axisNum] = gline.get(axis);
+				else statusUpdates.offset[axisNum] = 0;
+			}
+			statusUpdates.offsetEnabled = true;
+		}
+		if (gline.has('G92.1')) {
+			statusUpdates.offset = zeropoint;
+			statusUpdates.offsetEnabled = false;
+		}
+		if (gline.has('G92.2')) {
+			statusUpdates.offsetEnabled = false;
+		}
+		if (gline.has('G92.3')) {
+			statusUpdates.offsetEnabled = true;
+		}
+		if (gline.has('G93') || gline.has('G94')) {
+			statusUpdates.inverseFeed = gline.has('G93');
+		}
+		if (gline.has('M2') || gline.has('M30')) {
+			statusUpdates.offset = zeropoint;
+			statusUpdates.offsetEnabled = false;
+			statusUpdates.activeCoordSys = 0;
+			statusUpdates.incremental = false;
+			statusUpdates.spindle = false;
+			statusUpdates.coolant = false;
+		}
+		if (gline.has('M3') || gline.has('M4') || gline.has('M5')) {
+			statusUpdates.spindle = !gline.has('M5');
+			statusUpdates.spindleDirection = gline.has('M4') ? -1 : 1;
+			statusUpdates.spindleSpeed = gline.get('S') || null;
+		}
+		if (gline.has('M7') || gline.has('M8') || gline.has('M9')) {
+			if (gline.has('M7')) statusUpdates.coolant = 1;
+			else if (gline.has('M8')) statusUpdates.coolant = 2;
+			else statusUpdates.coolant = false;
+		}
+
+		this._handleStatusUpdate(statusUpdates);
 	}
 
 	close(err = null) {
@@ -1135,9 +1269,114 @@ class GRBLController extends Controller {
 		this.debug('close() complete');
 	}
 
-	sendStream(stream) {}
+	sendStream(stream) {
+		let waiter = pasync.waiter();
 
-	waitSync() {}
+		// Bounds within which to stop and start reading from the stream.  These correspond to the number of queued lines
+		// not yet sent to the controller.
+		let sendQueueHighWater = this.config.streamSendQueueHighWaterMark || 20;
+		let sendQueueLowWater = this.config.streamSendQueueLowWaterMark || Math.min(10, Math.floor(sendQueueHighWater / 5));
+		let streamPaused = false;
+		let canceled = false;
+
+		const numUnsentLines = () => {
+			return this.sendQueue.length - this.sendQueueIdxToSend;
+		};
+
+		const sentListener = () => {
+			// Check if paused stream can be resumed
+			if (numUnsentLines() <= sendQueueLowWater) {
+				stream.resume();
+				streamPaused = false;
+			}
+		};
+
+		const cancelHandler = (err) => {
+			this.removeListener('sent', sentListener);
+			this.removeListener('cancelRunningOps', cancelHandler);
+			canceled = true;
+			waiter.reject(err);
+			stream.emit('error', err);
+		};
+
+		stream.on(stream._isZStream ? 'chainerror' : 'error', (err) => {
+			if (canceled) return;
+			this.removeListener('sent', sentListener);
+			this.removeListener('cancelRunningOps', cancelHandler);
+			waiter.reject(err);
+			canceled = true;
+		});
+
+		this.on('sent', sentListener);
+
+		stream.on('data', (chunk) => {
+			if (canceled) return;
+			if (!chunk) return;
+			this.send(chunk);
+			// if send queue is too full, pause the stream
+			if (numUnsentLines() >= sendQueueHighWater) {
+				stream.pause();
+				streamPaused = true;
+			}
+		});
+
+		stream.on('end', () => {
+			if (canceled) return;
+			this.removeListener('sent', sentListener);
+			this.removeListener('cancelRunningOps', cancelHandler);
+			this.waitSync()
+				.then(() => waiter.resolve(), (err) => waiter.reject(err));
+		});
+
+		this.on('cancelRunningOps', cancelHandler);
+
+		return waiter.promise;
+	}
+
+	_isSynced() {
+		return this.currentStatusReport.machineState.toLowerCase() === 'idle' &&
+			(this.sendQueue.length === 0 || (this._disableSending && this.sendQueueIdxToReceive === this.sendQueueIdxToSend)) &&
+			this._lastRecvSrOrAck === 'sr';
+	}
+
+	waitSync() {
+		// Consider the machine to be synced when all of these conditions hold:
+		// 1) The machine state indicated by the last received status report indicates that the machine is not moving
+		// 2) this.sendQueue is empty (or sending is disabled, and all lines sent out have been processed)
+		// 3) A status report has been received more recently than the most recent ack
+		//
+		// Check if these conditions hold immediately.  If not, send out a status report request, and
+		// wait until the conditions become true.
+		if (this.error) return Promise.reject(new XError(XError.MACHINE_ERROR, 'Machine error code: ' + this.errorData));
+		if (this._isSynced()) return Promise.resolve();	
+		this.send('?');
+
+		return new Promise((resolve, reject) => {
+			const checkSyncHandler = () => {
+				if (this.error) {
+					reject(new XError(XError.MACHINE_ERROR, 'Machine error code: ' + this.errorData));
+					removeListeners();
+				} else if (this._isSynced()) {
+					resolve();
+					removeListeners();
+				}
+			};
+			const checkSyncErrorHandler = (err) => {
+				reject(err);
+				removeListeners();
+			};
+			const removeListeners = () => {
+				this.removeListener('cancelRunningOps', checkSyncErrorHandler);
+				this.removeListener('_sendQueueDrain', checkSyncHandler);
+				this.removeListener('_sendingDisabled', checkSyncHandler);
+			};
+			this.on('cancelRunningOps', checkSyncErrorHandler);
+			// events that can cause a sync: sr received, this.sendQueue drain, sending disabled
+			this.on('statusReportReceived', checkSyncHandler);
+			this.on('_sendQueueDrain', checkSyncHandler);
+			this.on('_sendingDisabled', checkSyncHandler);
+		});
+	}
 }
 
 
