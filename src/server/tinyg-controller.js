@@ -134,6 +134,7 @@ class TinyGController extends Controller {
 		this.lastResponseReceivedCounter = null;
 		this.lastStatusReportCounter = null;
 		this.lastResponseReceivedTime = null;
+		this.sendImmediateCounter = 0;
 	}
 
 	// Calls executing hooks corresponding to front entry in planner mirror
@@ -377,12 +378,12 @@ class TinyGController extends Controller {
 			//this.debug('_checkSendLoop() iteration');
 			let entry = this.sendQueue[this.sendQueueIdxToSend];
 			this._writeToSerial(entry.str + '\n');
+			this.sendQueueIdxToSend++;
+			if (this.sendImmediateCounter > 0) this.sendImmediateCounter--;
 			if (entry.hooks) {
 				entry.hooks.triggerSync('sent', entry);
 			}
 			this.emit('sent', entry.str);
-			this.sendQueueIdxToSend++;
-			if (this.sendImmediateCounter > 0) this.sendImmediateCounter--;
 		}
 
 		// If the next entry queued to receive a response doesn't actually expect a response, generate a "fake" response for it
