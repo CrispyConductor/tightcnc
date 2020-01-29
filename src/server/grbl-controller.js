@@ -401,7 +401,22 @@ class GRBLController extends Controller {
 				return;
 			} else if (this._resetting) {
 				// Ready again after reset
-				// TODO
+				this._commsReset();
+				this._disableSending = false;
+				this._resetting = false;
+				this._initMachine()
+					.then(() => {
+						this.ready = true;
+						this.emit('ready');
+						this.emit('statusUpdate');
+						this.debug('Done resetting');
+					})
+					.catch((err) => {
+						console.error(err);
+						this.debug('Error initializing machine after reset: ' + err);
+						this.close(err);
+						this._retryConnect();
+					});
 				return;
 			} else {
 				// Got an unexpected welcome message indicating that the device was reset unexpectedly
@@ -835,6 +850,7 @@ class GRBLController extends Controller {
 		this._statusUpdateLoops = [];
 		const startUpdateLoop = (interval, fn) => {
 			let ival = setInterval(() => {
+				if (!this.serial) return;
 				fn()
 					.catch((err) => this.emit('error', err));
 			}, interval);
@@ -1099,7 +1115,13 @@ class GRBLController extends Controller {
 				this.held = false;
 			}
 		} else if (str === '\x18') {
-			// TODO: Handle reset
+			// disable sending until welcome message is received
+			this._disableSending = true;
+			this.emit('_sendingDisabled');
+			this._resetting = true;
+			this.ready = false;
+			this.emit('statusUpdate');
+			// wait for welcome message to be received; rest of reset is handled in received line handler
 		}
 	}
 
@@ -1376,6 +1398,27 @@ class GRBLController extends Controller {
 			this.on('_sendQueueDrain', checkSyncHandler);
 			this.on('_sendingDisabled', checkSyncHandler);
 		});
+	}
+
+	hold() {
+		this.sendLine('!');
+	}
+
+	resume() {
+		this.sendLine('~');
+	}
+
+	cancel() {
+		// grbl doesn't really distinguish between a planner buffer wipe and a reset, so do the same thing for both
+		this.hold();
+		this.reset();
+	}
+
+	reset() {
+		if (!this.serial) return; // no reason to soft-reset GRBL without active connection
+		if (!this._initializing && !this._resetting) {
+			this.sendLine('\x18');
+		}
 	}
 }
 
