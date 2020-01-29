@@ -940,8 +940,10 @@ class GRBLController extends Controller {
 	// Will continue looping (asynchronously) and shifting off the front of sendQueue as long
 	// as there's stuff to shift off.
 	_commsCheckExecutedLoop() {
+		//this.debug('_commsCheckExecutedLoop()');
 		if (this._checkExecutedLoopTimeout !== null) {
 			// there's already a timeout running
+			//this.debug('Check executed loop already running');
 			return;
 		}
 		// shift off the front of send queue (calling executed hooks) for everything that we think has been executed
@@ -955,6 +957,7 @@ class GRBLController extends Controller {
 		)) {
 			let shiftedAny = false;
 			while (this.sendQueueIdxToReceive > 0 && this.sendQueue[0].timeExecuted <= mtime) {
+				//this.debug('_commsCheckExecutedLoop() shifting send queue');
 				this._commsShiftSendQueue();
 				shiftedAny = true;
 			}
@@ -966,6 +969,7 @@ class GRBLController extends Controller {
 			let twait = this.sendQueue[0].timeExecuted - mtime;
 			if (twait < minWait) twait = minWait;
 			this._checkExecutedLoopTimeout = setTimeout(() => {
+				//this.debug('Retrying _commsCheckExecutedLoop');
 				this._checkExecutedLoopTimeout = null;
 				this._commsCheckExecutedLoop();
 			}, twait);
@@ -980,7 +984,7 @@ class GRBLController extends Controller {
 		if (entry.hooks) entry.hooks.triggerSync('executed', entry);
 		if (this.sendQueue.length && this.sendQueueIdxToReceive) {
 			this.lastLineExecutingTime = this._getCurrentMachineTime();
-			if (entry.hooks) entry.hooks.triggerSync('executing', entry);
+			if (this.sendQueue[0].hooks) this.sendQueue[0].hooks.triggerSync('executing', entry);
 		}
 		if (!this.sendQueue.length) this.emit('_sendQueueDrain');
 	}
@@ -1214,7 +1218,7 @@ class GRBLController extends Controller {
 	}
 
 	_updateStateFromGcode(gline) {
-		this.debug('_updateStateFromGcode: ' + gline.toString());
+		//this.debug('_updateStateFromGcode: ' + gline.toString());
 		// Do not update state components that we have definite values for from status reports based on if we've ever received such a key in this.currentStatusReport
 
 		let statusUpdates = {};
