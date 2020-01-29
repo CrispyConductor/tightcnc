@@ -13,15 +13,16 @@ class ModeLog extends ConsoleUIMode {
 	}
 
 	async updateLog() {
-		let newEntries = await this.consoleui.client.op('getLog', {
+		let request = {
 			start: (this.lastLineNum === null) ? 0 : (this.lastLineNum + 1),
 			end: null,
 			limit: this.logConfig.updateBatchLimit
-		});
+		};
+		let newEntries = await this.consoleui.client.op('getLog', request);
 		if (!newEntries.length) return false;
 		let firstLineNum = newEntries[0][0];
 		let lastLineNum = newEntries[newEntries.length - 1][0];
-		if (this.lastlineNum !== null && firstLineNum !== this.lastLineNum + 1) {
+		if (this.lastLineNum !== null && firstLineNum !== this.lastLineNum + 1) {
 			// Either server log indexes reset, or we missed a gap in log data
 			this.logStr = '';
 		}
@@ -42,6 +43,8 @@ class ModeLog extends ConsoleUIMode {
 	}
 
 	startLogUpdateLoop() {
+		if (this.updateLoopRunning) return;
+		this.updateLoopRunning = true;
 		const runLoop = async() => {
 			await this.consoleui.serverPollLoop(async() => {
 				try {
