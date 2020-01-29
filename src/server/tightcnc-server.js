@@ -55,6 +55,7 @@ class TightCNCServer extends EventEmitter {
 
 		// Register builtin modules
 		this.registerController('TinyG', require('./tinyg-controller'));
+		this.registerController('grbl', require('./grbl-controller'));
 		require('./basic-operations')(this);
 		require('./file-operations')(this);
 		require('./job-operations')(this);

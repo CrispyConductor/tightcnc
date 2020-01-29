@@ -29,6 +29,18 @@ module.exports = {
 			// The possible negative side effect is that setting this number too low may cause stuttering with lots of fast
 			// moves.  Setting this to 4 is the equivalent of the tinyg "line mode" protocol.
 			maxUnackedRequests: 32
+		},
+		grbl: {
+			// serial port settings
+			port: '/dev/ttyACM1',
+			baudRate: 115200,
+			dataBits: 8,
+			stopBits: 1,
+			parity: 'none',
+
+			usedAxes: [ true, true, true ],
+			homableAxes: [ true, true, true ],
+
 		}
 	},
 	paths: {

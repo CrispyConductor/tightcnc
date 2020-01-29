@@ -46,7 +46,7 @@ class GRBLController extends Controller {
 		this.axisLabels = [ 'x', 'y', 'z' ];
 		this.usedAxes = config.usedAxes || [ true, true, true ];
 		this.homableAxes = config.homableAxes || [ true, true, true ];
-		this.axisMaxFeeds = [ 500, 500, 500 ];
+		this.axisMaxFeeds = config.axisMaxFeeds || [ 500, 500, 500 ];
 
 		// Mapping from a parameter key to its value (keys include things like G54, PRB, as well as VER, OPT - values are parsed)
 		this.receivedDeviceParameters = {};
@@ -62,6 +62,10 @@ class GRBLController extends Controller {
 		this.grblBuildOptions = {}; // build option flags and values, from OPT feedback message
 
 		this._lastRecvSrOrAck = null; // used as part of sync detection
+
+		// used for jogging
+		this.realTimeMovesTimeStart = [ 0, 0, 0, 0, 0, 0 ];
+		this.realTimeMovesCounter = [ 0, 0, 0, 0, 0, 0 ];
 	}
 
 	_getCurrentMachineTime() {
@@ -324,6 +328,7 @@ class GRBLController extends Controller {
 		this.grblSettings[setting] = value;
 		// check if setting requires updating other status properties
 		if (setting === 13) this.grblReportInches = value;
+		if (setting === 22) this.homableAxes = value ? (config.homableAxes || [ true, true, true ]) : [ false, false, false ];
 		if (setting === 30) this.spindleSpeedMax = value;
 		if (setting === 31) this.spindleSpeedMin = value;
 		if (setting === 110) this.axisMaxFeeds[0] = value;
@@ -352,11 +357,14 @@ class GRBLController extends Controller {
 		this._regexStartupLineSetting = /^\$N([0-9]+)=(.*)$/; // works for 1.1; not sure about 0.9
 		this._regexMessage = /^\[MSG:(.*)\]$/; // 1.1 only
 		this._regexParserState = /^\[GC:(.*)\]$/; // 1.1 only
-		this._regexParamValue = /^\[(G5[5-9]|G28|G30|G92|TLO|PRB|VER|OPT):(.*)\]$/; // 1.1 only
+		this._regexParamValue = /^\[(G5[4-9]|G28|G30|G92|TLO|PRB|VER|OPT):(.*)\]$/; // 1.1 only
 		this._regexFeedback = /^\[(.*)\]$/;
 
 		// regex for splitting status report elements
 		this._regexSrSplit = /^([^:]*):(.*)$/;
+
+		// regex for parsing outgoing settings commands
+		this._regexSettingsCommand = /^\$(N?[0-9]+)=(.*)$/;
 	}
 
 	_handleReceiveSerialDataLine(line) {
@@ -486,7 +494,7 @@ class GRBLController extends Controller {
 		}
 
 		// Check if it's some other feedback value
-		matches = this._regexFeedback.test(line);
+		matches = this._regexFeedback.exec(line);
 		if (matches) {
 			this._handleUnmatchedFeedbackMessage(matches[1]);
 			return;
@@ -825,13 +833,13 @@ class GRBLController extends Controller {
 		return new Promise((resolve, reject) => {
 			let finished = false;
 			let eventHandler, errorHandler;
-			eventHandler = (arg) => {
+			eventHandler = (...args) => {
 				if (finished) return;
-				if (condition && !condition(arg)) return;
+				if (condition && !condition(...args)) return;
 				this.removeListener(eventName, eventHandler);
 				this.removeListener('cancelRunningOps', errorHandler);
 				finished = true;
-				resolve(arg);
+				resolve(args[0]);
 			};
 			errorHandler = (err) => {
 				if (finished) return;
@@ -861,7 +869,9 @@ class GRBLController extends Controller {
 			this._statusUpdateLoops.push(ival);
 		};
 
-		startUpdateLoop(this.config.statusUpdateInterval || 250, async() => this.fetchUpdateStatusReport());
+		startUpdateLoop(this.config.statusUpdateInterval || 250, async() => {
+			if (this.serial) this.send('?');
+		});
 	}
 
 	_stopStatusUpdateLoops() {
@@ -876,6 +886,7 @@ class GRBLController extends Controller {
 	}
 
 	async fetchUpdateSettings() {
+		await this.request('$N');
 		return await this.request('$$');
 	}
 
@@ -985,6 +996,7 @@ class GRBLController extends Controller {
 
 		if (error === null) {
 			if (entry.hooks) entry.hooks.triggerSync('ack', entry);
+			this.emit('receivedOk', entry);
 			// If we're not expecting this to go onto the planner queue, splice it out of the list now.  Otherwise,
 			// increment the receive pointer.
 			const everythingToPlanner = true; // makes gline hooks execute in order
@@ -1105,6 +1117,7 @@ class GRBLController extends Controller {
 	_handleSendImmediateCommand(str) {
 		str = str.trim();
 		this._writeToSerial(str);
+		this.emit('sent', str);
 		if (str === '?') {
 			// status report request; no current additional action
 		} else if (str === '!') {
@@ -1169,26 +1182,39 @@ class GRBLController extends Controller {
 		}
 
 		let hooks = options.hooks || new CrispHooks();
-
-		// If this is a homing command, register hook that sets state to homed after acked
-		if (str.trim() === '$H') {
-			hooks.hookSync('ack', () => {
-				this.homed = [];
-				for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) this.homed.push(!!this.usedAxes[axisNum]);
-			});
-		}
-
-		// If can't parse as gcode (or starts with $), send as plain string
-		this._sendBlock({
+		let block = {
 			str: str,
 			hooks: hooks,
 			gcode: null,
 			goesToPlanner: 0,
 			fullSync: true
-		}, options.immediate);
+		};
+
+		// Register hook to update state when this executes
+		hooks.hookSync('ack', () => this._updateStateOnOutgoingCommand(block));
+
+		// If can't parse as gcode (or starts with $), send as plain string
+		this._sendBlock(block, options.immediate);
+	}
+
+	_updateStateOnOutgoingCommand(block) {
+		let cmd = block.str.trim();
+		let matches;
+
+		// Once homing is complete, set homing status
+		if (cmd === '$H') {
+			this.homed = [];
+			for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) this.homed.push(!!this.usedAxes[axisNum]);
+		}
+
+		matches = this._regexSettingsCommand.exec(cmd);
+		if (matches) {
+			this._handleSettingFeedback(matches[1], matches[2]);
+		}
 	}
 
 	_updateStateFromGcode(gline) {
+		this.debug('_updateStateFromGcode: ' + gline.toString());
 		// Do not update state components that we have definite values for from status reports based on if we've ever received such a key in this.currentStatusReport
 
 		let statusUpdates = {};
@@ -1441,7 +1467,84 @@ class GRBLController extends Controller {
 	}
 
 	async home() {
+		if (!this.homableAxes || !this.homableAxes.some((v) => v)) {
+			throw new XError(XError.INVALID_ARGUMENT, 'No axes configured to be homed');
+		}
 		await this.request('$H');
+	}
+
+	async move(pos, feed = null) {
+		let gcode = feed ? 'G1' : 'G0';
+		for (let axisNum = 0; axisNum < pos.length; axisNum++) {
+			if (typeof pos[axisNum] === 'number') {
+				gcode += ' ' + this.axisLabels[axisNum].toUpperCase() + pos[axisNum];
+			}
+		}
+		await this.request(gcode);
+		await this.waitSync();
+	}
+
+	_numInFlightRequests() {
+		return this.sendQueue.length - this.sendQueueIdxToReceive;
+	}
+
+	realTimeMove(axisNum, inc) {
+		// Make sure there aren't too many requests in the queue
+		if (this._numInFlightRequests() > (this.config.realTimeMovesMaxQueued || 8)) return false;
+		// Rate-limit real time move requests according to feed rate
+		let rtmTargetFeed = (this.axisMaxFeeds[axisNum] || 500) * 0.98; // target about 98% of max feed rate
+		let counterDecrement = (new Date().getTime() - this.realTimeMovesTimeStart[axisNum]) / 1000 * rtmTargetFeed / 60;
+		this.realTimeMovesCounter[axisNum] -= counterDecrement;
+		if (this.realTimeMovesCounter[axisNum] < 0) {
+			this.realTimeMovesCounter[axisNum] = 0;
+		}
+		this.realTimeMovesTimeStart[axisNum] = new Date().getTime();
+		let maxOvershoot = (this.config.realTimeMovesMaxOvershootFactor || 2) * Math.abs(inc);
+		if (this.realTimeMovesCounter[axisNum] > maxOvershoot) return false;
+		this.realTimeMovesCounter[axisNum] += Math.abs(inc);
+		// Send the move
+		this.send('G91');
+		let gcode = 'G0 ' + this.axisLabels[axisNum].toUpperCase() + inc;
+		this.send(gcode);
+		this.send('G90');
+	}
+
+	async probe(pos, feed = null) {
+		if (feed === null || feed === undefined) feed = 25;
+		await this.waitSync();
+
+		// Probe toward point
+		let gcode = new GcodeLine('G38.2 F' + feed);
+		let cpos = this.getPos();
+		for (let axisNum = 0; axisNum < pos.length; axisNum++) {
+			if (this.usedAxes[axisNum] && typeof pos[axisNum] === 'number' && pos[axisNum] !== cpos[axisNum]) {
+				gcode.set(this.axisLabels[axisNum], pos[axisNum]);
+			}
+		}
+		if (gcode.words.length < 3) throw new XError(XError.INVALID_ARGUMENT, 'Cannot probe toward current position');
+		this.send(gcode);
+
+		// Wait for a probe report, or an ack.  If an ack is received before a probe report, send out a param request and wait for the probe report to be returned with that.
+		const ackHandler = (block) => {
+			if (block.str.trim() !== '$#' && this._numInFlightRequests() < 10) { // prevent infinite loops and built on send queues
+				this.send('$#');
+			}
+		};
+		this.on('receivedOk', ackHandler);
+		try {
+			await this._waitForEvent('deviceParamUpdate', (paramName) => paramName === 'PRB');
+		} finally {
+			this.removeListener('receivedOk', ackHandler);
+		}
+
+		let { tripPos, probeTripped } = this.receivedDeviceParameters.PRB;
+		if (!probeTriggered) {
+			throw new XError(XError.PROBE_NOT_TRIPPED, 'Probe was not tripped during probing');
+		}
+		
+		// If the probe was successful, move back to the position the probe tripped
+		await this.move(tripPos);
+		return tripPos;
 	}
 }
 
