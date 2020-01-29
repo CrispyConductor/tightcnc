@@ -828,17 +828,17 @@ class GRBLController extends Controller {
 			eventHandler = (arg) => {
 				if (finished) return;
 				if (condition && !condition(arg)) return;
-				finished = true;
-				resolve(arg);
 				this.removeListener(eventName, eventHandler);
 				this.removeListener('cancelRunningOps', errorHandler);
+				finished = true;
+				resolve(arg);
 			};
 			errorHandler = (err) => {
 				if (finished) return;
-				finished = true;
-				reject(err);
 				this.removeListener(eventName, eventHandler);
 				this.removeListener('cancelRunningOps', errorHandler);
+				finished = true;
+				reject(err);
 			};
 			this.on(eventName, eventHandler);
 			this.on('cancelRunningOps', errorHandler);
@@ -849,9 +849,13 @@ class GRBLController extends Controller {
 		if (this._statusUpdateLoops) return;
 		this._statusUpdateLoops = [];
 		const startUpdateLoop = (interval, fn) => {
+			let fnIsRunning = false;
 			let ival = setInterval(() => {
 				if (!this.serial) return;
+				if (fnIsRunning) return;
+				fnIsRunning = true;
 				fn()
+					.then(() => { fnIsRunning = false; }, (err) => { fnIsRunning = false; throw err; })
 					.catch((err) => this.emit('error', err));
 			}, interval);
 			this._statusUpdateLoops.push(ival);
@@ -1115,6 +1119,9 @@ class GRBLController extends Controller {
 				this.held = false;
 			}
 		} else if (str === '\x18') {
+			if (!this._isSynced() && !this.held) {
+				this.homed = [ false, false, false ];
+			}
 			// disable sending until welcome message is received
 			this._disableSending = true;
 			this.emit('_sendingDisabled');
@@ -1160,10 +1167,21 @@ class GRBLController extends Controller {
 				return;
 			}
 		}
+
+		let hooks = options.hooks || new CrispHooks();
+
+		// If this is a homing command, register hook that sets state to homed after acked
+		if (str.trim() === '$H') {
+			hooks.hookSync('ack', () => {
+				this.homed = [];
+				for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) this.homed.push(!!this.usedAxes[axisNum]);
+			});
+		}
+
 		// If can't parse as gcode (or starts with $), send as plain string
 		this._sendBlock({
 			str: str,
-			hooks: options.hooks || new CrispHooks(),
+			hooks: hooks,
 			gcode: null,
 			goesToPlanner: 0,
 			fullSync: true
@@ -1411,7 +1429,8 @@ class GRBLController extends Controller {
 	cancel() {
 		// grbl doesn't really distinguish between a planner buffer wipe and a reset, so do the same thing for both
 		this.hold();
-		this.reset();
+		// Timeout is to ensure that grbl receives the hold and stops so it can preserve its location on reset
+		this.setTimeout(() => this.reset(), 500);
 	}
 
 	reset() {
@@ -1419,6 +1438,10 @@ class GRBLController extends Controller {
 		if (!this._initializing && !this._resetting) {
 			this.sendLine('\x18');
 		}
+	}
+
+	async home() {
+		await this.request('$H');
 	}
 }
 

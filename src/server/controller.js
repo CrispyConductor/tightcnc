@@ -260,7 +260,7 @@ class Controller extends EventEmitter {
 	 * @param {Boolean[]} axes - true for each axis to home; false for others
 	 * @return {Promise} - Resolves when homing is complete.
 	 */
-	home(axes) {}
+	home(axes = null) {}
 
 	/**
 	 * Probe toward position.  Resolve when probe trips.  Error if probe reaches position without tripping.  This should return
