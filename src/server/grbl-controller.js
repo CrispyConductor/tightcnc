@@ -449,6 +449,7 @@ class GRBLController extends Controller {
 				return;
 			} else if (this._resetting) {
 				// Ready again after reset
+				this._cancelRunningOps(new XError(XError.MACHINE_ERROR, 'Machine reset'));
 				this._commsReset();
 				this._disableSending = false;
 				this._resetting = false;
