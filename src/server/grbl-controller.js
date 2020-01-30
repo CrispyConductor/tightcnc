@@ -117,6 +117,7 @@ class GRBLController extends Controller {
 
 	_handleStatusUpdate(obj) {
 		let changed = false;
+		let wasReady = this.ready;
 		for (let key in obj) {
 			if (!objtools.deepEquals(obj[key], objtools.getPath(this, key))) {
 				objtools.setPath(this, key, obj[key]);
@@ -124,6 +125,7 @@ class GRBLController extends Controller {
 			}
 		}
 		if (changed) this.emit('statusUpdate');
+		if (!wasReady && this.ready && !this._initializing && !this._resetting) this.emit('ready');
 	}
 
 	_handleReceiveStatusReport(srString) {
@@ -171,6 +173,19 @@ class GRBLController extends Controller {
 		}
 		// Parsed mapping is now in statusReport
 
+		// Separate the machine state into major and minor components
+		if (statusReport.machineState) {
+			let state = statusReport.machineState;
+			if (state.indexOf(':') !== -1) {
+				let stateParts = state.split(':');
+				statusReport.machineStateMajor = stateParts[0];
+				statusReport.machineStateMinor = parseInt(stateParts[1]);
+			} else {
+				statusReport.machineStateMajor = statusReport.machineState;
+				statusReport.machineStateMinor = null;
+			}
+		}
+
 		// Update this.currentStatusReport
 		for (let key in statusReport) {
 			this.currentStatusReport[key] = statusReport[key];
@@ -185,13 +200,8 @@ class GRBLController extends Controller {
 
 			if (key === 'machineState') {
 				// States: Idle, Run, Hold, Jog (1.1 only), Alarm, Door, Check, Home, Sleep (1.1 only)
-				let substate = null;
-				let state = statusReport[key];
-				if (state.indexOf(':') !== -1) {
-					let stateParts = state.split(':');
-					state = stateParts[0];
-					substate = parseInt(stateParts[1]);
-				}
+				let state = statusReport.machineStateMajor;
+				let substate = statusReport.machineStateMinor;
 				switch (state.toLowerCase()) {
 					case 'idle':
 						obj.ready = true;
@@ -222,7 +232,14 @@ class GRBLController extends Controller {
 						obj.held = false;
 						obj.moving = false;
 						obj.error = true;
-						if (!this.errorData) obj.errorData = new XError(XError.MACHINE_ERROR, this.lastMessage || 'Alarmed');
+						if (!this.errorData && !obj.errorData) {
+							// got status of alarm without a previous ALARM message indicating the type of alarm (which happens in some cases)
+							if (this.lastMessage) {
+								// infer the alarm state from the most recent message received
+								obj.errorData = this._msgToError(this.lastMessage);
+							}
+							if (!obj.errorData) obj.errorData = new XError(XError.MACHINE_ERROR, 'Alarmed');
+						}
 						obj.programRunning = false;
 						break;
 					case 'door':
@@ -295,7 +312,7 @@ class GRBLController extends Controller {
 				// As with 'Bf' above, could possibly be used to additional inform when to call hooks and syncing
 			} else if (key === 'RX') { // 0.9
 				// not used
-			} else if (key !== 'MPos' && key !== 'WPos' && key !== 'WCO') {
+			} else if (key !== 'MPos' && key !== 'WPos' && key !== 'WCO' && key !== 'machineStateMajor' && key !== 'machineStateMinor') {
 				// unknown status field; ignore
 			}
 		}
@@ -385,7 +402,7 @@ class GRBLController extends Controller {
 				return new XError(XError.LIMIT_HIT, 'Limit hit', { grblAlarm: alarm });
 			case 3:
 			case 'abort during cycle':
-				return new XError(XError.MACHINE_ERROR, 'Position unknown after reset', { grblAlarm: alarm });
+				return new XError(XError.MACHINE_ERROR, 'Position unknown after reset; home machine or clear error', { grblAlarm: alarm, subcode: 'position_unknown'});
 			case 4:
 				return new XError(XError.PROBE_INITIAL_STATE, 'Probe not in expected initial state', { grblAlarm: alarm });
 			case 5:
@@ -401,6 +418,34 @@ class GRBLController extends Controller {
 				return new XError(XError.MACHINE_ERROR, 'Homing switch not found', { grblAlarm: alarm });
 			default:
 				return new XError(XError.MACHINE_ERROR, 'GRBL Alarm: ' + alarm, { grblAlarm: alarm });
+		}
+	}
+
+	// Converts the grbl message to an XError
+	// Returns null if the message does not indicate an error
+	// Note that just receiving a message that can be interpreted as an error doesn't mean the machine is alarmed; that should be checked separately
+	_msgToError(str) {
+		switch(str.trim()) {
+			case "'$H'|'$X' to unlock":
+				return new XError(XError.MACHINE_ERROR, 'Position unknown; home machine or clear error', { subcode: 'position_unknown', grblMsg: str });
+			case 'Reset to continue':
+				return new XError(XError.MACHINE_ERROR, 'Critical error; reset required', { grblMsg: str });
+			case 'Check Door':
+				return new XError(XError.SAFETY_INTERLOCK, 'Door open', { grblMsg: str });
+			case 'Check Limits':
+				return new XError(XError.LIMIT_HIT, 'Limit hit', { grblMsg: str });
+
+			case 'Caution: Unlocked':
+			case 'Enabled':
+			case 'Disabled':
+			case 'Pgm End':
+			case 'Restoring defaults':
+			case 'Restoring spindle':
+			case 'Sleeping':
+				return null;
+
+			default:
+				return new XError(XError.MACHINE_ERROR, 'GRBL: ' + str, { grblMsg: str });
 		}
 	}
 
@@ -455,8 +500,9 @@ class GRBLController extends Controller {
 				this._resetting = false;
 				this._initMachine()
 					.then(() => {
-						this.ready = true;
-						this.emit('ready');
+						this._resetting = false;
+						this.emit('initialized');
+						if (this.ready) this.emit('ready');
 						this.emit('statusUpdate');
 						this.debug('Done resetting');
 					})
@@ -550,7 +596,10 @@ class GRBLController extends Controller {
 	}
 
 	_handleReceivedMessage(str, unwrapped = false) {
-		if (this._ignoreUnlockedMessage && str === 'Caution: Unlocked') return; // ignore reset messages during probing
+		// suppress some messages during certain operations where the messages are handled automatically and
+		// don't need to be reported to the user
+		if (this._ignoreUnlockedMessage && str === 'Caution: Unlocked') return;
+		if (this._ignoreUnlockPromptMessage && str === "'$H'|'$X' to unlock") return;
 		this.emit('message', str);
 	}
 
@@ -817,9 +866,9 @@ class GRBLController extends Controller {
 			await this._initMachine();
 
 			// Initialization succeeded
-			this.ready = true;
 			this._initializing = false;
-			this.emit('ready');
+			this.emit('initialized');
+			if (this.ready) this.emit('ready');
 			this.emit('statusUpdate');
 			this.debug('initConnection() done');
 		};
@@ -1524,10 +1573,76 @@ class GRBLController extends Controller {
 	}
 
 	cancel() {
-		// grbl doesn't really distinguish between a planner buffer wipe and a reset, so do the same thing for both
-		this.hold();
-		// Timeout is to ensure that grbl receives the hold and stops so it can preserve its location on reset
-		setTimeout(() => this.reset(), 500);
+		// grbl doesn't have a queue wipe feature, so use a device reset and work around the issues with that.
+		// The issues with this are:
+		// 1) If we're currently moving, a reset will cause grbl to lose position.  To account for this, first execute
+		//    a feed hold and wait for it to take effect.
+		// 2) Even though grbl appears to correctly save position if reset during a feed hold, it still enters an alart
+		//    state (position lost) after the reset.  To account for this, check for this state after the reset, and
+		//    clear the alarm.
+		// 3) On reset, parser state is lost, so save parser state prior to the reset and recover it afterwards, with
+		//    the exception of spindle and coolant.  NOTE: This is currently DISABLED because resetting parser state
+		//    may actually be expected on cancel.
+
+		const doCancel = async() => {
+			// Execute feed hold
+			if (!this.held) this.hold();
+
+			// Wait for status report to confirm feed hold
+			await this._waitForEvent('statusReportReceived', () => this.held && this.currentStatusReport.machineState.toLowerCase() !== 'hold:1');
+
+			// If on an older version of grbl that doesn't support the 'hold complete' substate, wait an additional delay
+			if (this.currentStatusReport.machineState.toLowerCase() !== 'hold:0') {
+				await pasync.setTimeout(500);
+			}
+
+			// Copy relevant parser state to restore later
+			let restoreHomed = objtools.deepCopy(this.homed);
+			let restoreState = {
+				activeCoordSys: this.activeCoordSys,
+				units: this.units,
+				feed: this.feed,
+				incremental: this.incremental,
+				inverseFeed: this.inverseFeed
+			};
+
+			// Perform the reset (inside a try so we can make sure to restore the ignored messages)
+			this._ignoreUnlockPromptMessage = true;
+			try {
+				this.reset();
+
+				// Wait for the reset to complete.  Can't use _waitForEvent for this because _waitForEvent fails if
+				// operations are cancelled during it, and a reset performs an operation cancel.
+				await new Promise((resolve, reject) => {
+					const readyHandler = () => {
+						this.removeListener('initialized', readyHandler);
+						resolve();
+					};
+					// use 'initialized' instead of 'ready' because ready isn't necessarily fired if resetting into an alarm state
+					this.on('initialized', readyHandler);
+				});
+			} finally {
+				this._ignoreUnlockPromptMessage = false;
+			}
+
+			// If alarmed due to a loss of position, assume the alarm is erroneous (since we did a feed hold before
+			// the reset) and clear it.
+			if (this.error && this.errorData && this.errorData.code === XError.MACHINE_ERROR && this.errorData.data && this.errorData.data.subcode === 'position_unknown') {
+				this._ignoreUnlockedMessage = true;
+				try {
+					await this.request('$X');
+				} finally {
+					this._ignoreUnlockedMessage = false;
+				}
+			}
+
+			// Restore parser state after reset.  Uses timeEstVM but substitutes our own state object
+			this.homed = restoreHomed;
+			//let restoreGcodes = this.timeEstVM.syncMachineToState({ vmState: restoreState });
+			//for (let l of restoreGcodes) this.send(l);
+		};
+
+		doCancel().catch(() => {}); // ignore errors (errors in this process get reported in other ways)
 	}
 
 	reset() {
