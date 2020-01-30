@@ -66,6 +66,8 @@ class GRBLController extends Controller {
 		// used for jogging
 		this.realTimeMovesTimeStart = [ 0, 0, 0, 0, 0, 0 ];
 		this.realTimeMovesCounter = [ 0, 0, 0, 0, 0, 0 ];
+
+		this.lastMessage = null;
 	}
 
 	_getCurrentMachineTime() {
@@ -216,7 +218,7 @@ class GRBLController extends Controller {
 						obj.held = false;
 						obj.moving = false;
 						obj.error = true;
-						obj.errorData = obj.errorData || 'alarm';
+						if (!this.errorData) obj.errorData = this.lastMessage || 'alarm';
 						obj.programRunning = false;
 						break;
 					case 'door':
@@ -403,6 +405,9 @@ class GRBLController extends Controller {
 		matches = this._regexWelcome.exec(line);
 		if (matches) {
 			this.grblDeviceVersion = matches[1];
+			this.error = false;
+			this.errorData = null;
+			this.lastMessage = null;
 			if (this._initializing && this._welcomeMessageWaiter) {
 				// Complete initialization
 				this._welcomeMessageWaiter.resolve();
@@ -475,6 +480,7 @@ class GRBLController extends Controller {
 		// Check if it's a message
 		matches = this._regexMessage.exec(line);
 		if (matches) {
+			this.lastMessage = matches[1];
 			this.emit('message', 'GRBL: ' + matches[1]);
 			return;
 		}
@@ -1541,8 +1547,8 @@ class GRBLController extends Controller {
 			this.removeListener('receivedOk', ackHandler);
 		}
 
-		let { tripPos, probeTripped } = this.receivedDeviceParameters.PRB;
-		if (!probeTriggered) {
+		let [ tripPos, probeTripped ] = this.receivedDeviceParameters.PRB;
+		if (!probeTripped) {
 			throw new XError(XError.PROBE_NOT_TRIPPED, 'Probe was not tripped during probing');
 		}
 		

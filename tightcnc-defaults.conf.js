@@ -39,8 +39,7 @@ module.exports = {
 			parity: 'none',
 
 			usedAxes: [ true, true, true ],
-			homableAxes: [ true, true, true ],
-
+			homableAxes: [ true, true, true ]
 		}
 	},
 	paths: {
