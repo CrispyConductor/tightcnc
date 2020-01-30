@@ -74,7 +74,7 @@ class GRBLController extends Controller {
 		let ctime = new Date().getTime();
 		let mtime = ctime - this.machineTimeBaseline;
 		mtime -= this.totalHeldMachineTime;
-		if (this.held) {
+		if (this.held && this.lastHoldStartTime) {
 			mtime -= (ctime - this.lastHoldStartTime);
 		}
 		return mtime;
@@ -103,6 +103,10 @@ class GRBLController extends Controller {
 		this.sendQueueIdxToReceive = 0;
 		this.unackedCharCount = 0;
 		this.sendImmediateCounter = 0;
+		if (this._checkExecutedLoopTimeout !== null) {
+			clearTimeout(this._checkExecutedLoopTimeout);
+			this._checkExecutedLoopTimeout = null;
+		}
 		this.emit('_sendQueueDrain');
 	}
 
@@ -1185,6 +1189,13 @@ class GRBLController extends Controller {
 				this.held = false;
 			}
 		} else if (str === '\x18') {
+			// reset held state and timer(s)
+			if (this.held) {
+				this.totalHeldMachineTime += new Date().getTime() - this.lastHoldStartTime;
+				this.lastHoldStartTime = null;
+				this.held = false;
+			}
+
 			if (!this._isSynced() && !this.held) {
 				this.homed = [ false, false, false ];
 			}
@@ -1616,11 +1627,16 @@ class GRBLController extends Controller {
 			} finally {
 				this._ignoreUnlockedMessage = false;
 			}
+			this.timeEstVM.syncStateToMachine({ include: [ 'mpos' ], controller: this });
 			throw new XError(XError.PROBE_NOT_TRIPPED, 'Probe was not tripped during probing');
 		}
 		
 		// If the probe was successful, move back to the position the probe tripped
 		await this.move(tripPos);
+
+		// Sync the time estimation vm position to the new pos after probing
+		this.timeEstVM.syncStateToMachine({ include: [ 'mpos' ], controller: this });
+
 		return tripPos;
 	}
 
