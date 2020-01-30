@@ -871,6 +871,7 @@ class TinyGController extends Controller {
 			// Initialization succeeded
 			this.ready = true;
 			this._initializing = false;
+			this.emit('connected');
 			this.emit('ready');
 			this.emit('statusUpdate');
 			this.debug('initConnection() done');

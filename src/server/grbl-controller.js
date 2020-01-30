@@ -351,7 +351,7 @@ class GRBLController extends Controller {
 		this.grblSettings[setting] = value;
 		// check if setting requires updating other status properties
 		if (setting === 13) this.grblReportInches = value;
-		if (setting === 22) this.homableAxes = value ? (config.homableAxes || [ true, true, true ]) : [ false, false, false ];
+		if (setting === 22) this.homableAxes = value ? (this.config.homableAxes || [ true, true, true ]) : [ false, false, false ];
 		if (setting === 30) this.spindleSpeedMax = value;
 		if (setting === 31) this.spindleSpeedMin = value;
 		if (setting === 110) this.axisMaxFeeds[0] = value;
@@ -449,6 +449,20 @@ class GRBLController extends Controller {
 		}
 	}
 
+	// Converts an error code from an "error:x" message to an XError
+	_responseCodeToError(ecode) {
+		if (ecode && !isNaN(ecode)) ecode = parseInt(ecode);
+		if (typeof ecode === 'string') ecode = ecode.toLowerCase();
+		// TODO: Finish filling out this table
+		switch(ecode) {
+			case 1:
+			case 'expected command letter':
+				return new XError(XError.PARSE_ERROR, 'Missing command letter in gcode', { grblErrorCode: ecode });
+			default:
+				return new XError(XError.MACHINE_ERROR, 'GRBL error: ' + ecode, { grblErrorCode: ecode });
+		}
+	}
+
 	_handleReceiveSerialDataLine(line) {
 		let matches;
 		//this.debug('receive line ' + line);
@@ -475,9 +489,7 @@ class GRBLController extends Controller {
 		matches = this._regexError.exec(line);
 		if (matches) {
 			this._lastRecvSrOrAck = 'ack';
-			let errInfo = matches[1];
-			if (errInfo && !isNaN(errInfo)) errInfo = parseInt(errInfo);
-			this._commsHandleAckResponseReceived(errInfo);
+			this._commsHandleAckResponseReceived(this._responseCodeToError(matches[1]));
 			return;
 		}
 
@@ -595,12 +607,25 @@ class GRBLController extends Controller {
 		console.error('Received unknown line from grbl: ' + line);
 	}
 
+	_humanReadableMessage(msg) {
+		switch(msg) {
+			case "'$H'|'$X' to unlock":
+				return 'Position lost; home machine or clear error';
+			case 'Caution: Unlocked':
+				return 'Caution: Error cleared';
+			case 'Pgm End':
+				return 'Program end';
+			default:
+				return msg;
+		}
+	}
+
 	_handleReceivedMessage(str, unwrapped = false) {
 		// suppress some messages during certain operations where the messages are handled automatically and
 		// don't need to be reported to the user
 		if (this._ignoreUnlockedMessage && str === 'Caution: Unlocked') return;
 		if (this._ignoreUnlockPromptMessage && str === "'$H'|'$X' to unlock") return;
-		this.emit('message', str);
+		this.emit('message', this._humanReadableMessage(str));
 	}
 
 	_handleDeviceParserUpdate(str) {
@@ -867,6 +892,7 @@ class GRBLController extends Controller {
 
 			// Initialization succeeded
 			this._initializing = false;
+			this.emit('connected');
 			this.emit('initialized');
 			if (this.ready) this.emit('ready');
 			this.emit('statusUpdate');
@@ -1157,9 +1183,10 @@ class GRBLController extends Controller {
 			this.sendQueue.splice(this.sendQueueIdxToReceive, 1);
 			this.sendQueueIdxToSend--; // need to adjust this for the splice
 			if (entry.hooks) {
-				entry.hooks.triggerSync('error', new XError(XError.INTERNAL_ERROR, 'Received error code from request to GRBL: ' + error));
+				entry.hooks.triggerSync('error', error);
 			}
 			if (!this.sendQueue.length) this.emit('_sendQueueDrain');
+			this.emit('message', error.message);
 		}
 
 		//this.debug('_commsHandleAckResponseReceived calling _commsCheckExecutedLoop');
