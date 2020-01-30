@@ -80,6 +80,13 @@ class OpReset extends Operation {
 	}
 }
 
+class OpClearError extends Operation {
+	getParamSchema() { return {}; }
+	run() {
+		this.tightcnc.controller.clearError();
+	}
+}
+
 class OpRealTimeMove extends Operation {
 	getParamSchema() {
 		return {
@@ -350,6 +357,7 @@ function registerOperations(tightcnc) {
 	tightcnc.registerOperation('resume', OpResume);
 	tightcnc.registerOperation('cancel', OpCancel);
 	tightcnc.registerOperation('reset', OpReset);
+	tightcnc.registerOperation('clearError', OpClearError);
 	tightcnc.registerOperation('realTimeMove', OpRealTimeMove);
 	tightcnc.registerOperation('move', OpMove);
 	tightcnc.registerOperation('home', OpHome);

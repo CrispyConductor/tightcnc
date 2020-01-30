@@ -114,8 +114,9 @@ class Controller extends EventEmitter {
 		this.spindle = false;
 		// Last line number executed
 		this.line = 0;
-		// true if the machine is in an error state
+		// true if the machine is in an error/alarm state
 		this.error = false;
+		// Additional information about the error.  Must be an XError object.
 		this.errorData = null;
 		// true if a program is running
 		this.programRunning = false;
@@ -232,6 +233,13 @@ class Controller extends EventEmitter {
 	reset() {}
 
 	/**
+	 * Clears a current error state, if possible.
+	 *
+	 * @method clearError
+	 */
+	clearError() {}
+
+	/**
 	 * Move by inc in direction of axis.  If this is called multiple times before a previous move is completed, extra invocations
 	 * should be ignored.  This is used for real-time control of the machine with an interface.
 	 *
@@ -341,6 +349,10 @@ XError.registerErrorCode('machine_error', { message: 'Machine error' });
 XError.registerErrorCode('cancelled', { message: 'Cancelled' });
 // Error when a probe is not tripped
 XError.registerErrorCode('probe_not_tripped', { message: 'Probe was not tripped' });
+XError.registerErrorCode('probe_initial_state', { message: 'Probe initial state not as expected' });
+// Error when a safety interlock or door is disengaged
+XError.registerErrorCode('safety_interlock', { message: 'Safety interlock disengaged' });
+XError.registerErrorCode('limit_hit', { message: 'Limit switch hit' });
 
 module.exports = Controller;
 

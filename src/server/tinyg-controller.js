@@ -890,7 +890,7 @@ class TinyGController extends Controller {
 		this.debug('close() ' + err);
 		if (err && !this.error) {
 			this.error = true;
-			this.errorData = err;
+			this.errorData = XError.isXError(err) ? err : new XError(XError.MACHINE_ERROR, '' + err);
 		}
 		this.ready = false;
 		this.debug('close() calling _cancelRunningOps()');
@@ -988,14 +988,14 @@ class TinyGController extends Controller {
 
 		// register a listener for status changes, and resolve when these conditions are met
 		await new Promise((resolve, reject) => {
-			if (this.error) return reject(new XError(XError.MACHINE_ERROR, 'Machine error code: ' + this.errorData));
+			if (this.error) return reject(this.errorData || new XError(XError.MACHINE_ERROR, 'Error waiting for sync'));
 			let removeListeners;
 			this._waitingForSync = true;
 			const statusHandler = () => {
 				if (this.error) {
 					this._waitingForSync = false;
 					removeListeners();
-					reject(new XError(XError.MACHINE_ERROR, 'Machine error code: ' + this.errorData));
+					reject(this.errorData || new XError(XError.MACHINE_ERROR, 'Error waiting for sync'));
 				} else if (this.synced) {
 					this._waitingForSync = false;
 					removeListeners();
@@ -1048,7 +1048,7 @@ class TinyGController extends Controller {
 		if ('er' in data) {
 			if (!this._disableResponseErrorEvent) {
 				this.error = true;
-				this.errorData = data.er;
+				this.errorData = new XError(XError.MACHINE_ERROR, data.er.msg || JSON.stringify(data.er), data.er);
 				this.ready = false;
 				let err = new XError(XError.MACHINE_ERROR, data.er.msg || ('Code ' + data.er.st) || 'Machine error report', data.er);
 				this._cancelRunningOps(err);
@@ -1178,7 +1178,7 @@ class TinyGController extends Controller {
 					this.held = false;
 					this.moving = false;
 					this.error = true;
-					if (!this.errorData) this.errorData = 'alarm';
+					if (!this.errorData) this.errorData = new XError(XError.MACHINE_ERROR, 'Alarmed');
 					break;
 				case 3: // stop
 				case 8: // cycle
@@ -1401,6 +1401,10 @@ class TinyGController extends Controller {
 			this.debug('reset() called without serial; setting resetOnConnect flag');
 			this.resetOnConnect = true;
 		}
+	}
+
+	clearError() {
+		this.sendLine({ clear: null });
 	}
 
 	async home(axes = null) {

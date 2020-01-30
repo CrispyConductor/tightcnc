@@ -327,6 +327,17 @@ module.exports = {
 						}
 					}
 				},
+				'clearError': {
+					keys: [ 'l' ],
+					keyNames: [ 'l' ],
+					label: 'Clear Err',
+					action: {
+						operation: {
+							name: 'clearError',
+							params: {}
+						}
+					}
+				},
 				'runMacro': {
 					keys: [ 'c' ],
 					keyNames: [ 'c' ],

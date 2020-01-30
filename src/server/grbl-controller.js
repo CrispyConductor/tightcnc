@@ -218,7 +218,7 @@ class GRBLController extends Controller {
 						obj.held = false;
 						obj.moving = false;
 						obj.error = true;
-						if (!this.errorData) obj.errorData = this.lastMessage || 'alarm';
+						if (!this.errorData) obj.errorData = new XError(XError.MACHINE_ERROR, this.lastMessage || 'Alarmed');
 						obj.programRunning = false;
 						break;
 					case 'door':
@@ -227,7 +227,7 @@ class GRBLController extends Controller {
 						obj.moving = false;
 						obj.error = true;
 						// TODO: Handle substate with different messages here
-						obj.errorData = 'Door';
+						obj.errorData = new XError(XError.SAFETY_INTERLOCK, 'Door open');
 						obj.programRunning = false;
 						break;
 					case 'check':
@@ -369,6 +369,37 @@ class GRBLController extends Controller {
 		this._regexSettingsCommand = /^\$(N?[0-9]+)=(.*)$/;
 	}
 
+	_alarmCodeToError(alarm) {
+		if (alarm && !isNaN(alarm)) alarm = parseInt(alarm);
+		if (typeof alarm === 'string') alarm = alarm.toLowerCase().trim();
+		switch (alarm) {
+			case 1:
+				return new XError(XError.LIMIT_HIT, 'Hard limit triggered', { limitType: 'hard', grblAlarm: alarm });
+			case 2:
+				return new XError(XError.LIMIT_HIT, 'Soft limit triggered', { limitType: 'soft', grblAlarm: alarm });
+			case 'hard/soft limit':
+				return new XError(XError.LIMIT_HIT, 'Limit hit', { grblAlarm: alarm });
+			case 3:
+			case 'abort during cycle':
+				return new XError(XError.MACHINE_ERROR, 'Position unknown after reset', { grblAlarm: alarm });
+			case 4:
+				return new XError(XError.PROBE_INITIAL_STATE, 'Probe not in expected initial state', { grblAlarm: alarm });
+			case 5:
+			case 'probe fail':
+				return new XError(XError.PROBE_NOT_TRIPPED, 'Probe was not tripped', { grblAlarm: alarm });
+			case 6:
+				return new XError(XError.MACHINE_ERROR, 'Reset during homing cycle', { grblAlarm: alarm });
+			case 7:
+				return new XError(XError.MACHINE_ERROR, 'Door opened during homing', { grblAlarm: alarm });
+			case 8:
+				return new XError(XError.MACHINE_ERROR, 'Homing did not clear switch', { grblAlarm: alarm });
+			case 9:
+				return new XError(XError.MACHINE_ERROR, 'Homing switch not found', { grblAlarm: alarm });
+			default:
+				return new XError(XError.MACHINE_ERROR, 'GRBL Alarm: ' + alarm, { grblAlarm: alarm });
+		}
+	}
+
 	_handleReceiveSerialDataLine(line) {
 		let matches;
 		//this.debug('receive line ' + line);
@@ -458,10 +489,13 @@ class GRBLController extends Controller {
 			this.error = true;
 			this.ready = false;
 			this.moving = false;
-			this.errorData = 'Alarm: ' + matches[1];
-			let err = new XError(XError.MACHINE_ERROR, 'Alarm: ' + matches[1]);
-			this._cancelRunningOps(err);
-			if (!this._initializing) this.emit('error', err);
+			let err = this._alarmCodeToError(matches[1]);
+			this.errorData = err;
+			// Don't cancel ops or emit error on routine probe alarms
+			if (err.code !== XError.PROBE_NOT_TRIPPED) {
+				this._cancelRunningOps(err);
+				if (!this._initializing) this.emit('error', err);
+			}
 			return;
 		}
 
@@ -481,7 +515,7 @@ class GRBLController extends Controller {
 		matches = this._regexMessage.exec(line);
 		if (matches) {
 			this.lastMessage = matches[1];
-			this.emit('message', 'GRBL: ' + matches[1]);
+			this._handleReceivedMessage(matches[1], false);
 			return;
 		}
 
@@ -502,12 +536,17 @@ class GRBLController extends Controller {
 		// Check if it's some other feedback value
 		matches = this._regexFeedback.exec(line);
 		if (matches) {
-			this._handleUnmatchedFeedbackMessage(matches[1]);
+			this._handleReceivedMessage(matches[1], true);
 			return;
 		}
 
 		// Unmatched line
 		console.error('Received unknown line from grbl: ' + line);
+	}
+
+	_handleReceivedMessage(str, unwrapped = false) {
+		if (this._ignoreUnlockedMessage && str === 'Caution: Unlocked') return; // ignore reset messages during probing
+		this.emit('message', str);
 	}
 
 	_handleDeviceParserUpdate(str) {
@@ -621,13 +660,9 @@ class GRBLController extends Controller {
 		this.emit('deviceParamUpdate', name, value);
 	}
 
-	_handleUnmatchedFeedbackMessage(str) {
-		this.emit('message', 'GRBL: ' + str);
-	}
-
-	_writeToSerial(str) {
+	_writeToSerial(strOrBuf) {
 		if (!this.serial) return;
-		this.serial.write(str);
+		this.serial.write(strOrBuf);
 	}
 
 	_cancelRunningOps(err) {
@@ -763,7 +798,7 @@ class GRBLController extends Controller {
 			let finishedWelcomeWait = false;
 			setTimeout(() => {
 				if (!finishedWelcomeWait) {
-					this.serial.write('\x18');
+					this._writeToSerial('\x18');
 				}
 			}, 5000);
 			try {
@@ -1155,6 +1190,12 @@ class GRBLController extends Controller {
 		}
 	}
 
+	sendExtendedAsciiCommand(code) {
+		let buf = Buffer.from([ code ]);
+		this._writeToSerial(buf);
+		this.emit('sent', '<<' + code + '>>');
+	}
+
 	_gcodeLineRequiresSync(gline) {
 		// things that touch the eeprom
 		return gline.has('G10') || gline.has('G28.1') || gline.has('G30.1') || gline.get('G', 'G54') || gline.has('G28') || gline.has('G30');
@@ -1324,7 +1365,7 @@ class GRBLController extends Controller {
 		this._stopStatusUpdateLoops();
 		if (err && !this.error) {
 			this.error = true;
-			this.errorData = err;
+			this.errorData = XError.isXError(err) ? err : new XError(XError.MACHINE_ERROR, '' + err);
 		}
 		this.ready = false;
 		this.debug('close() calling _cancelRunningOps()');
@@ -1423,14 +1464,14 @@ class GRBLController extends Controller {
 		//
 		// Check if these conditions hold immediately.  If not, send out a status report request, and
 		// wait until the conditions become true.
-		if (this.error) return Promise.reject(new XError(XError.MACHINE_ERROR, 'Machine error code: ' + this.errorData));
+		if (this.error) return Promise.reject(this.errorData || new XError(XError.MACHINE_ERROR, 'Error waiting for sync'));
 		if (this._isSynced()) return Promise.resolve();	
 		this.send('?');
 
 		return new Promise((resolve, reject) => {
 			const checkSyncHandler = () => {
 				if (this.error) {
-					reject(new XError(XError.MACHINE_ERROR, 'Machine error code: ' + this.errorData));
+					reject(this.errorData || new XError(XError.MACHINE_ERROR, 'Error waiting for sync'));
 					removeListeners();
 				} else if (this._isSynced()) {
 					resolve();
@@ -1473,6 +1514,15 @@ class GRBLController extends Controller {
 		if (!this.serial) return; // no reason to soft-reset GRBL without active connection
 		if (!this._initializing && !this._resetting) {
 			this.sendLine('\x18');
+		}
+	}
+
+	clearError() {
+		if (!this.serial) return;
+		if (this.errorData && this.errorData.code === XError.SAFETY_INTERLOCK) {
+			this.sendExtendedAsciiCommand(0x84);
+		} else {
+			this.send('$X');
 		}
 	}
 
@@ -1549,6 +1599,15 @@ class GRBLController extends Controller {
 
 		let [ tripPos, probeTripped ] = this.receivedDeviceParameters.PRB;
 		if (!probeTripped) {
+			this._ignoreUnlockedMessage = true;
+			try {
+				// Assume we're in an alarm state now and reset the alarm
+				await this.request('$X');
+				// Fetch a status report to ensure that status is updated properly
+				await this.fetchUpdateStatusReport();
+			} finally {
+				this._ignoreUnlockedMessage = false;
+			}
 			throw new XError(XError.PROBE_NOT_TRIPPED, 'Probe was not tripped during probing');
 		}
 		
