@@ -82,7 +82,7 @@ class GRBLController extends Controller {
 
 	debug(str) {
 		const enableDebug = false;
-		if (this.tightcnc) this.tightcnc.debug('TinyG: ' + str);
+		if (this.tightcnc) this.tightcnc.debug('GRBL: ' + str);
 		else if (enableDebug) console.log('Debug: ' + str);
 	}
 
@@ -959,6 +959,7 @@ class GRBLController extends Controller {
 			return;
 		}
 		this.sendQueue.push(block);
+		//this.debug('In _sendBlock(), queue: ' + this.sendQueue.map((e) => [ e.str, e.duration, e.timeExecuted ].join(',')).join(' | '));
 		if (block.hooks) block.hooks.triggerSync('queued', block);
 		this._checkSendLoop();
 	}
@@ -1005,10 +1006,11 @@ class GRBLController extends Controller {
 			if (shiftedAny) this._checkSendLoop();
 		}
 		// if there's something queued at the front of sendQueue, wait until then
-		if (this.sendQueueIdxToReceive > 0 && !this._checkExecutedLoopTimeout) {
+		if (this.sendQueueIdxToReceive > 0 && this._checkExecutedLoopTimeout === null) {
 			const minWait = 100;
 			let twait = this.sendQueue[0].timeExecuted - mtime;
 			if (twait < minWait) twait = minWait;
+			//this.debug('_commsCheckExecutedLoop() scheduling another loop in ' + twait);
 			this._checkExecutedLoopTimeout = setTimeout(() => {
 				//this.debug('Retrying _commsCheckExecutedLoop');
 				this._checkExecutedLoopTimeout = null;
@@ -1018,6 +1020,7 @@ class GRBLController extends Controller {
 	}
 
 	_commsShiftSendQueue() {
+		//this.debug('_commsShiftSendQueue()');
 		if (!this.sendQueue.length || !this.sendQueueIdxToReceive) return;
 		let entry = this.sendQueue.shift();
 		this.sendQueueIdxToSend--;
@@ -1025,12 +1028,14 @@ class GRBLController extends Controller {
 		if (entry.hooks) entry.hooks.triggerSync('executed', entry);
 		if (this.sendQueue.length && this.sendQueueIdxToReceive) {
 			this.lastLineExecutingTime = this._getCurrentMachineTime();
-			if (this.sendQueue[0].hooks) this.sendQueue[0].hooks.triggerSync('executing', entry);
+			//this.debug('_commsShiftSendQueue triggering executing hook: ' + this.sendQueue[0].str);
+			if (this.sendQueue[0].hooks) this.sendQueue[0].hooks.triggerSync('executing', this.sendQueue[0]);
 		}
 		if (!this.sendQueue.length) this.emit('_sendQueueDrain');
 	}
 
 	_commsHandleAckResponseReceived(error = null) {
+		//this.debug('_commsHandleAckResponseReceived');
 		if (this.sendQueueIdxToReceive >= this.sendQueueIdxToSend) {
 			// Got a response we weren't expecting; ignore it
 			return;
@@ -1070,6 +1075,7 @@ class GRBLController extends Controller {
 				if (this.sendQueueIdxToReceive === 1) {
 					// just received response for entry at head of send queue, so assume it's executing now.
 					this.lastLineExecutingTime = this._getCurrentMachineTime();
+					//this.debug('_commsHandleAckResponseReceived calling executing hook at head of sendQueue: ' + entry.str);
 					if (entry.hooks) entry.hooks.triggerSync('executing', entry);
 				}
 				// If our estimated size of grbl's planner queue is larger than its max size, shift off the front of sendQueue until down to size
@@ -1086,6 +1092,7 @@ class GRBLController extends Controller {
 				if (entry.gcode) this.timeEstVM.runGcodeLine(entry.gcode);
 				if (entry.hooks) {
 					this.lastLineExecutingTime = this._getCurrentMachineTime();
+					//this.debug('_commsHandleAckResponseReceived calling executing hook; second case: ' + entry.str);
 					entry.hooks.triggerSync('executing', entry);
 					entry.hooks.triggerSync('executed', entry);
 				}
@@ -1101,6 +1108,7 @@ class GRBLController extends Controller {
 			if (!this.sendQueue.length) this.emit('_sendQueueDrain');
 		}
 
+		//this.debug('_commsHandleAckResponseReceived calling _commsCheckExecutedLoop');
 		this._commsCheckExecutedLoop();
 		this._checkSendLoop();
 	}
@@ -1507,7 +1515,7 @@ class GRBLController extends Controller {
 		// grbl doesn't really distinguish between a planner buffer wipe and a reset, so do the same thing for both
 		this.hold();
 		// Timeout is to ensure that grbl receives the hold and stops so it can preserve its location on reset
-		this.setTimeout(() => this.reset(), 500);
+		setTimeout(() => this.reset(), 500);
 	}
 
 	reset() {
@@ -1614,6 +1622,16 @@ class GRBLController extends Controller {
 		// If the probe was successful, move back to the position the probe tripped
 		await this.move(tripPos);
 		return tripPos;
+	}
+
+	getStatus() {
+		let o = super.getStatus();
+		o.comms = {
+			sendQueueLength: this.sendQueue.length,
+			sendQueueIdxToSend: this.sendQueueIdxToSend,
+			sendQueueIdxToReceive: this.sendQueueIdxToReceive
+		};
+		return o;
 	}
 }
 
