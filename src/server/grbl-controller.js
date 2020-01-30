@@ -248,7 +248,7 @@ class GRBLController extends Controller {
 						obj.moving = false;
 						obj.error = true;
 						// TODO: Handle substate with different messages here
-						obj.errorData = new XError(XError.SAFETY_INTERLOCK, 'Door open');
+						obj.errorData = new XError(XError.SAFETY_INTERLOCK, 'Door open', { doorCode: substate });
 						obj.programRunning = false;
 						break;
 					case 'check':
@@ -388,6 +388,7 @@ class GRBLController extends Controller {
 
 		// regex for parsing outgoing settings commands
 		this._regexSettingsCommand = /^\$(N?[0-9]+)=(.*)$/;
+		this._regexRstCommand = /^\$RST=(.*)$/;
 	}
 
 	_alarmCodeToError(alarm) {
@@ -1182,10 +1183,19 @@ class GRBLController extends Controller {
 			// Got an error on the request.  Splice it out of sendQueue, and call the error hook on the gcode line
 			this.sendQueue.splice(this.sendQueueIdxToReceive, 1);
 			this.sendQueueIdxToSend--; // need to adjust this for the splice
+			if (!error.data) error.data = {};
+			error.data.request = entry.str;
+
 			if (entry.hooks) {
 				entry.hooks.triggerSync('error', error);
 			}
-			if (!this.sendQueue.length) this.emit('_sendQueueDrain');
+
+			const cancelEverythingOnError = true;
+			if (cancelEverythingOnError) {
+				this._cancelRunningOps(error);
+			} else {
+				if (!this.sendQueue.length) this.emit('_sendQueueDrain');
+			}
 			this.emit('message', error.message);
 		}
 
@@ -1357,6 +1367,15 @@ class GRBLController extends Controller {
 		matches = this._regexSettingsCommand.exec(cmd);
 		if (matches) {
 			this._handleSettingFeedback(matches[1], matches[2]);
+		}
+
+		matches = this._regexRstCommand.exec(cmd);
+		if (matches) {
+			// update all local state after a $RST
+			this.send('$$');
+			this.send('$#');
+			this.send('$I');
+			this.send('?');
 		}
 	}
 
