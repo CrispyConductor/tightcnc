@@ -34,7 +34,7 @@ class GRBLController extends Controller {
 
 		// The machine timestamp that the most recent line began executing
 		this.lastLineExecutingTime = null;
-		this.timeEstVM = new GcodeVM();
+		this.timeEstVM = new GcodeVM({ maxFeed: [ 1000, 1000, 1000 ], acceleration: [ 36000, 36000, 36000 ] });
 		this._checkExecutedLoopTimeout = null;
 
 		// Number of blocks in sendQueue to send immediately even if it would exceed normal backpressure
@@ -354,11 +354,12 @@ class GRBLController extends Controller {
 		if (setting === 22) this.homableAxes = value ? (this.config.homableAxes || [ true, true, true ]) : [ false, false, false ];
 		if (setting === 30) this.spindleSpeedMax = value;
 		if (setting === 31) this.spindleSpeedMin = value;
-		if (setting === 110) this.axisMaxFeeds[0] = value;
-		if (setting === 111) this.axisMaxFeeds[1] = value;
-		if (setting === 112) this.axisMaxFeeds[2] = value;
-		// TODO: handle storing max accel, as well as max travel
-		// TODO: sync to gcode vm
+		if (setting === 110) { this.axisMaxFeeds[0] = value; this.timeEstVM.options.maxFeed[0] = value; }
+		if (setting === 111) { this.axisMaxFeeds[1] = value; this.timeEstVM.options.maxFeed[1] = value; }
+		if (setting === 112) { this.axisMaxFeeds[2] = value; this.timeEstVM.options.maxFeed[2] = value; }
+		if (setting === 120) { this.timeEstVM.options.acceleration[0] = value * 3600; }
+		if (setting === 121) { this.timeEstVM.options.acceleration[1] = value * 3600; }
+		if (setting === 122) { this.timeEstVM.options.acceleration[2] = value * 3600; }
 		// fire event
 		if (value !== oldVal) {
 			this.emit('statusUpdate');
