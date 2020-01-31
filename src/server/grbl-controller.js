@@ -371,7 +371,7 @@ class GRBLController extends Controller {
 		// received message regexes
 		this._regexWelcome = /^Grbl v?([^ ]+)/; // works for both 0.9 and 1.1
 		this._regexOk = /^ok(:(.*))?/; // works for both 0.9 and 1.1
-		this._regexError = /^error:(.*)$/; // works for both 0.9 and 1.1
+		this._regexError = /^error: ?(.*)$/; // works for both 0.9 and 1.1
 		this._regexStartupLineOk = /^>.*:ok$/; // works for 1.1; not sure about 0.9
 		this._regexStartupLineError = /^>.*:error:(.*)$/; // works for 1.1
 		this._regexStatusReport = /^<(.*)>$/; // works for both 0.9 and 1.1
@@ -1531,6 +1531,17 @@ class GRBLController extends Controller {
 				statusUpdates['coordSysOffsets.' + csys][axisNum] = val;
 			}
 		}
+		if (gline.has('G10') && gline.has('L20') && gline.has('P')) {
+			let csys = gline.get('P') - 1;
+			statusUpdates['coordSysOffsets.' + csys] = [];
+			for (let axisNum = 0; axisNum < this.axisLabels.length; axisNum++) {
+				let axis = this.axisLabels[axisNum].toUpperCase();
+				let val = 0;
+				if (gline.has(axis)) val = gline.get(axis);
+				statusUpdates['coordSysOffsets.' + csys][axisNum] = this.mpos[axisNum] - val;
+			}
+		}
+
 		if (gline.has('G20') || gline.has('G21')) {
 			statusUpdates.units = gline.has('G20') ? 'in' : 'mm';
 		}
