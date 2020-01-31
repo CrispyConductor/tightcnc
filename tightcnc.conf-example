@@ -22,6 +22,7 @@ baseDir: '/var/lib/tightcnc'
 
 # Which controller is configured to be used
 controller: 'TinyG'
+#controller: 'grbl'
 
 # Configurations for the controllers
 controllers:
@@ -39,7 +40,11 @@ controllers:
     usedAxes: [ true, true, true, false, false, false ]
     # Which of the axes can be homed
     homableAxes: [ true, true, true ]
-
+  grbl:
+    port: '/dev/ttyACM1'
+    baudRate: 115200,
+    usedAxes: [ true, true, true ],
+    homableAxes: [ true, true, true ]
 # A list of plugin names to load
 plugins: []
 

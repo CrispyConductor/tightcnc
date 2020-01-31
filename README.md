@@ -21,8 +21,8 @@ Its features include:
 * Includes a framework for building automatic parameterized gcode generators, based on the macro system
 * Runtime feed override
 * Supports multiple simultaneous clients
-* Currently supports TinyG (and probably g2core, but untested), but includes a controller abstraction layer for future implementation of other controllers
-* For TinyG, uses an algorithm to estimate a gcode line's position in various queues and buffers, allowing for advanced flow control and extra progress feedback
+* Currently supports TinyG and GRBL (both 0.9 protocol and 1.1 protocol)
+* Deep integrations with controllers, taking advantage of each controller's unique features for optimal performance and abilities
 * Fast gcode sender supporting short, fast moves while still ensuring immediate operations such as feed hold/cancel are immediately effective
 
 TightCNC is not designed to be an all-in-one CAD/CAM/Sender package; it is strictly focused on post-CAM processing and machine interfacing.  Nearly all operations
@@ -69,13 +69,14 @@ are handled server-side, so things like UI crashes are not an issue for ongoing 
 
 ## Supported Devices
 
-Currently, support for different types of devices is lacking - only TinyG (and probably g2core, but not tested) is supported (because that's the
-only device I have to test with).  If others have any interest in this project, and would be willing to help test implementations on
-their machines, I plan to build support for additional types of devices.
+Currently supported devices are:
 
-The TinyG implementation is itself pretty complete, and takes advantage of several of this device's special features (the recommended
-abbreviated JSON syntax, triple queue reports for flow control, etc).
+* TinyG
+* GRBL (0.9 protocol)
+* GRBL (1.1 protocol)
 
+Each supported device has a complete implementation designed to take advantage of the device's unique features to improve
+performance and to take care of edge cases.
 
 ## Setup
 
@@ -590,5 +591,13 @@ can sometimes overfill the controller's receive buffer.  This isn't an issue wit
 to datastream corruption.  If you cannot use hardware flow control, you should probably disable the aggressive sending algorithm by setting
 `controllers.TinyG.maxUnackedRequests` to `8` (in the config).
 
+
+## GRBL
+
+The GRBL controller implementation works with both the grbl 0.9 protocol and grbl 1.1 protocol.  Block execution timing is supported
+even without line number support compiled into grbl.  Feed and acceleration values are loaded from the device, then used to estimate
+how long each move will take.  This is augmented with other protocol information to predict when each block starts and finishes executing.
+
+The grbl protocol version is autodetected.  Just make sure the baud rate setting in the config file is correct for your version.
 
 
