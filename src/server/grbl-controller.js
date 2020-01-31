@@ -1257,11 +1257,11 @@ class GRBLController extends Controller {
 				entry.duration = estBlockDuration;
 				// Estimate a machine timestamp of when this block will have executed
 				if (this.sendQueueIdxToReceive >= 2 && this.lastLineExecutingTime) {
-					// there's a line currently executing, so base eta off of that line's executed time
-					entry.timeExecuted = this.sendQueue[0].timeExecuted;
+					// there's a line currently executing, so base eta off of that line's executing time
+					entry.timeExecuted = this.lastLineExecutingTime;
 					// add in everything in the planner buffer between the head and this instructions (including this instruction)
 					// TODO: optimize out this loop by storing this value as a running tally
-					for (let i = 1; i < this.sendQueueIdxToReceive; i++) entry.timeExecuted += this.sendQueue[i].duration;
+					for (let i = 0; i < this.sendQueueIdxToReceive; i++) entry.timeExecuted += this.sendQueue[i].duration;
 				} else {
 					// this line will start to execute right now, so base eta on current time
 					entry.timeExecuted = this._getCurrentMachineTime() + estBlockDuration;
