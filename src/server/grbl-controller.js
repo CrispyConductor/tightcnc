@@ -454,12 +454,115 @@ class GRBLController extends Controller {
 	// Converts an error code from an "error:x" message to an XError
 	_responseCodeToError(ecode) {
 		if (ecode && !isNaN(ecode)) ecode = parseInt(ecode);
-		if (typeof ecode === 'string') ecode = ecode.toLowerCase();
-		// TODO: Finish filling out this table
 		switch(ecode) {
 			case 1:
-			case 'expected command letter':
-				return new XError(XError.PARSE_ERROR, 'Missing command letter in gcode', { grblErrorCode: ecode });
+			case 'Expected command letter':
+				return new XError(XError.PARSE_ERROR, 'G-code words consist of a letter and a value. Letter was not found.', { grblErrorCode: 1 });
+			case 2:
+			case 'Bad number format':
+				return new XError(XError.PARSE_ERROR, 'Missing the expected G-code word value or numeric value format is not valid.', { grblErrorCode: 2 });
+			case 3:
+			case 'Invalid statement':
+				return new XError(XError.MACHINE_ERROR, 'Grbl \'$\' system command was not recognized or supported.', { grblErrorCode: 3 });
+			case 4:
+			case 'Value < 0':
+				return new XError(XError.MACHINE_ERROR, 'Negative value received for an expected positive value.', { grblErrorCode: 4 });
+			case 5:
+			case 'Setting disabled':
+				return new XError(XError.MACHINE_ERROR, 'Homing cycle failure. Homing is not enabled via settings.', { grblErrorCode: 5 });
+			case 6:
+			case 'Value < 3 usec':
+				return new XError(XError.MACHINE_ERROR, 'Minimum step pulse time must be greater than 3usec.', { grblErrorCode: 6 });
+			case 7:
+			case 'EEPROM read fail. Using defaults':
+				return new XError(XError.MACHINE_ERROR, 'An EEPROM read failed. Auto-restoring affected EEPROM to default values.', { grblErrorCode: 7 });
+			case 8:
+			case 'Not idle':
+				return new XError(XError.MACHINE_ERROR, 'Grbl \'$\' command cannot be used unless Grbl is IDLE. Ensures smooth operation during a job.', { grblErrorCode: 8 });
+			case 9:
+			case 'G-code lock':
+				return new XError(XError.MACHINE_ERROR, 'G-code commands are locked out during alarm or jog state.', { grblErrorCode: 9 });
+			case 10:
+			case 'Homing not enabled':
+				return new XError(XError.MACHINE_ERROR, 'Soft limits cannot be enabled without homing also enabled.', { grblErrorCode: 10 });
+			case 11:
+			case 'Line overflow':
+				return new XError(XError.MACHINE_ERROR, 'Max characters per line exceeded. Received command line was not executed.', { grblErrorCode: 11 });
+			case 12:
+			case 'Step rate > 30kHz':
+				return new XError(XError.MACHINE_ERROR, 'Grbl \'$\' setting value cause the step rate to exceed the maximum supported.', { grblErrorCode: 12 });
+			case 13:
+			case 'Check Door':
+				return new XError(XError.MACHINE_ERROR, 'Safety door detected as opened and door state initiated.', { grblErrorCode: 13 });
+			case 14:
+			case 'Line length exceeded':
+				return new XError(XError.MACHINE_ERROR, 'Build info or startup line exceeded EEPROM line length limit. Line not stored.', { grblErrorCode: 14 });
+			case 15:
+			case 'Travel exceeded':
+				return new XError(XError.MACHINE_ERROR, 'Jog target exceeds machine travel. Jog command has been ignored.', { grblErrorCode: 15 });
+			case 16:
+			case 'Invalid jog command':
+				return new XError(XError.MACHINE_ERROR, 'Jog command has no \'=\' or contains prohibited g-code.', { grblErrorCode: 16 });
+			case 17:
+			case 'Setting disabled':
+				return new XError(XError.MACHINE_ERROR, 'Laser mode requires PWM output.', { grblErrorCode: 17 });
+			case 20:
+			case 'Unsupported command':
+				return new XError(XError.PARSE_ERROR, 'Unsupported or invalid g-code command found in block.', { grblErrorCode: 20 });
+			case 21:
+			case 'Modal group violation':
+				return new XError(XError.PARSE_ERROR, 'More than one g-code command from same modal group found in block.', { grblErrorCode: 21 });
+			case 22:
+			case 'Undefined feed rate':
+				return new XError(XError.MACHINE_ERROR, 'Feed rate has not yet been set or is undefined.', { grblErrorCode: 22 });
+			case 23:
+			case 'Invalid gcode ID:23':
+				return new XError(XError.MACHINE_ERROR, 'G-code command in block requires an integer value.', { grblErrorCode: 23 });
+			case 24:
+			case 'Invalid gcode ID:24':
+				return new XError(XError.PARSE_ERROR, 'More than one g-code command that requires axis words found in block.', { grblErrorCode: 24 });
+			case 25:
+			case 'Invalid gcode ID:25':
+				return new XError(XError.MACHINE_ERROR, 'Repeated g-code word found in block.', { grblErrorCode: 25 });
+			case 26:
+			case 'Invalid gcode ID:26':
+				return new XError(XError.MACHINE_ERROR, 'No axis words found in block for g-code command or current modal state which requires them.', { grblErrorCode: 26 });
+			case 27:
+			case 'Invalid gcode ID:27':
+				return new XError(XError.MACHINE_ERROR, 'Line number value is invalid.', { grblErrorCode: 27 });
+			case 28:
+			case 'Invalid gcode ID:28':
+				return new XError(XError.MACHINE_ERROR, 'G-code command is missing a required value word.', { grblErrorCode: 28 });
+			case 29:
+			case 'Invalid gcode ID:29':
+				return new XError(XError.MACHINE_ERROR, 'G59.x work coordinate systems are not supported.', { grblErrorCode: 29 });
+			case 30:
+			case 'Invalid gcode ID:30':
+				return new XError(XError.MACHINE_ERROR, 'G53 only allowed with G0 and G1 motion modes.', { grblErrorCode: 30 });
+			case 31:
+			case 'Invalid gcode ID:31':
+				return new XError(XError.MACHINE_ERROR, 'Axis words found in block when no command or current modal state uses them.', { grblErrorCode: 31 });
+			case 32:
+			case 'Invalid gcode ID:32':
+				return new XError(XError.MACHINE_ERROR, 'G2 and G3 arcs require at least one in-plane axis word.', { grblErrorCode: 32 });
+			case 33:
+			case 'Invalid gcode ID:33':
+				return new XError(XError.MACHINE_ERROR, 'Motion command target is invalid.', { grblErrorCode: 33 });
+			case 34:
+			case 'Invalid gcode ID:34':
+				return new XError(XError.MACHINE_ERROR, 'Arc radius value is invalid.', { grblErrorCode: 34 });
+			case 35:
+			case 'Invalid gcode ID:35':
+				return new XError(XError.MACHINE_ERROR, 'G2 and G3 arcs require at least one in-plane offset word.', { grblErrorCode: 35 });
+			case 36:
+			case 'Invalid gcode ID:36':
+				return new XError(XError.MACHINE_ERROR, 'Unused value words found in block.', { grblErrorCode: 36 });
+			case 37:
+			case 'Invalid gcode ID:37':
+				return new XError(XError.MACHINE_ERROR, 'G43.1 dynamic tool length offset is not assigned to configured tool length axis.', { grblErrorCode: 37 });
+			case 38:
+			case 'Invalid gcode ID:38':
+				return new XError(XError.MACHINE_ERROR, 'Tool number greater than max supported value.', { grblErrorCode: 38 });
 			default:
 				return new XError(XError.MACHINE_ERROR, 'GRBL error: ' + ecode, { grblErrorCode: ecode });
 		}
