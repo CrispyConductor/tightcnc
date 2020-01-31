@@ -373,15 +373,17 @@ class GRBLController extends Controller {
 		this._regexOk = /^ok(:(.*))?/; // works for both 0.9 and 1.1
 		this._regexError = /^error:(.*)$/; // works for both 0.9 and 1.1
 		this._regexStartupLineOk = /^>.*:ok$/; // works for 1.1; not sure about 0.9
-		this._regexStartupLineError = /^>.*:error:(.*)$/; // works for 1.1; not sure about 0.9
+		this._regexStartupLineError = /^>.*:error:(.*)$/; // works for 1.1
 		this._regexStatusReport = /^<(.*)>$/; // works for both 0.9 and 1.1
 		this._regexAlarm = /^ALARM:(.*)$/; // works for both 0.9 and 1.1
 		this._regexIgnore = /^\[HLP:.*\]$|^\[echo:.*/; // regex of messages we don't care about but are valid responses from grbl
-		this._regexSetting = /^\$([0-9]+)=(-?[0-9.]+)/; // works for 1.1; not sure about 0.9
+		this._regexSetting = /^\$([0-9]+)=(-?[0-9.]+)/; // works forboth 0.9 and 1.1
 		this._regexStartupLineSetting = /^\$N([0-9]+)=(.*)$/; // works for 1.1; not sure about 0.9
 		this._regexMessage = /^\[MSG:(.*)\]$/; // 1.1 only
 		this._regexParserState = /^\[GC:(.*)\]$/; // 1.1 only
+		this._regexParserState09 = /^\[(([A-Z]-?[0-9.]+ ?){4,})\]$/; // 0.9 only
 		this._regexParamValue = /^\[(G5[4-9]|G28|G30|G92|TLO|PRB|VER|OPT):(.*)\]$/; // 1.1 only
+		this._regexVersion09 = /^\[([0-9.]+[a-zA-Z]?\.[0-9]+:.*)\]$/; // 0.9 only
 		this._regexFeedback = /^\[(.*)\]$/;
 
 		// regex for splitting status report elements
@@ -395,7 +397,7 @@ class GRBLController extends Controller {
 	_alarmCodeToError(alarm) {
 		if (alarm && !isNaN(alarm)) alarm = parseInt(alarm);
 		if (typeof alarm === 'string') alarm = alarm.toLowerCase().trim();
-		switch (alarm) {
+		switch (typeof alarm === 'string' ? alarm.toLowerCase() : alarm) {
 			case 1:
 				return new XError(XError.LIMIT_HIT, 'Hard limit triggered', { limitType: 'hard', grblAlarm: alarm });
 			case 2:
@@ -689,6 +691,7 @@ class GRBLController extends Controller {
 
 		// Check if it's parser state feedback
 		matches = this._regexParserState.exec(line);
+		if (!matches) matches = this._regexParserState09.exec(line);
 		if (matches) {
 			this._handleDeviceParserUpdate(matches[1]);
 			return;
@@ -698,6 +701,13 @@ class GRBLController extends Controller {
 		matches = this._regexParamValue.exec(line);
 		if (matches) {
 			this._handleDeviceParameterUpdate(matches[1], matches[2]);
+			return;
+		}
+
+		// Version data for 0.9
+		matches = this._regexVersion09.exec(line);
+		if (matches) {
+			this._handleDeviceParameterUpdate('VER', matches[1]);
 			return;
 		}
 
@@ -1684,8 +1694,11 @@ class GRBLController extends Controller {
 		// Check if these conditions hold immediately.  If not, send out a status report request, and
 		// wait until the conditions become true.
 		if (this.error) return Promise.reject(this.errorData || new XError(XError.MACHINE_ERROR, 'Error waiting for sync'));
-		if (this._isSynced()) return Promise.resolve();	
-		this.send('?');
+
+		this.send('G4 P0.01'); // grbl won't ack this until its planner buffer is empty
+
+		//if (this._isSynced()) return Promise.resolve();	
+		//this.send('?');
 
 		return new Promise((resolve, reject) => {
 			const checkSyncHandler = () => {
@@ -1701,16 +1714,22 @@ class GRBLController extends Controller {
 				reject(err);
 				removeListeners();
 			};
+			const okHandler = () => {
+				// expedites syncing
+				this.send('?');
+			};
 			const removeListeners = () => {
 				this.removeListener('cancelRunningOps', checkSyncErrorHandler);
 				this.removeListener('_sendQueueDrain', checkSyncHandler);
 				this.removeListener('_sendingDisabled', checkSyncHandler);
+				this.removeListener('receivedOk', okHandler);
 			};
 			this.on('cancelRunningOps', checkSyncErrorHandler);
 			// events that can cause a sync: sr received, this.sendQueue drain, sending disabled
 			this.on('statusReportReceived', checkSyncHandler);
 			this.on('_sendQueueDrain', checkSyncHandler);
 			this.on('_sendingDisabled', checkSyncHandler);
+			this.on('receivedOk', okHandler);
 		});
 	}
 
