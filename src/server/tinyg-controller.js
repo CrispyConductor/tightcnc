@@ -103,6 +103,8 @@ class TinyGController extends Controller {
 		this.lastResponseReceivedTime = null; // set to a Date object when a response is received
 
 		this._serialListeners = {}; // mapping from serial port event names to listener functions; used to remove listeners during cleanup
+
+		this.nCtr = 1;
 	}
 
 	debug(str) {
@@ -573,6 +575,10 @@ class TinyGController extends Controller {
 	}
 
 	sendGcode(gline, options = {}) {
+		const overrideLineNumbers = true;
+		if (gline.words.length && overrideLineNumbers) {
+			gline.set('N', this.nCtr++);
+		}
 		let hooks = options.hooks || (gline.triggerSync ? gline : new CrispHooks());
 		hooks.hookSync('executing', () => this._updateStateFromGcode(gline));
 		this._sendBlock({
@@ -660,7 +666,7 @@ class TinyGController extends Controller {
 	_writeToSerial(str) {
 		if (!this.serial) return;
 		this.serial.write(str);
-		this.serial.flush();
+		//this.serial.flush();
 	}
 
 	_isImmediateCommand(str) {
