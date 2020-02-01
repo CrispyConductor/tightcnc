@@ -660,6 +660,7 @@ class TinyGController extends Controller {
 	_writeToSerial(str) {
 		if (!this.serial) return;
 		this.serial.write(str);
+		this.serial.flush();
 	}
 
 	_isImmediateCommand(str) {
@@ -889,6 +890,8 @@ class TinyGController extends Controller {
 			this._expectingReset = true;
 			try {
 				await this._waitForEvent('resetMessageReceived', null, 1500);
+			} catch (err) {
+				if (err.code !== XError.TIMED_OUT) throw err;
 			} finally {
 				this._expectingReset = false;
 			}
