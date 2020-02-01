@@ -1203,8 +1203,10 @@ class GRBLController extends Controller {
 		// if there's something queued at the front of sendQueue, wait until then
 		if (this.sendQueueIdxToReceive > 0 && this._checkExecutedLoopTimeout === null) {
 			const minWait = 100;
+			const maxWait = 1000;
 			let twait = this.sendQueue[0].timeExecuted - mtime;
 			if (twait < minWait) twait = minWait;
+			if (twait > maxWait) twait = maxWait;
 			//this.debug('_commsCheckExecutedLoop() scheduling another loop in ' + twait);
 			this._checkExecutedLoopTimeout = setTimeout(() => {
 				//this.debug('Retrying _commsCheckExecutedLoop');
