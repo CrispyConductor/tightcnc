@@ -718,6 +718,48 @@ class TinyGController extends Controller {
 		});
 	}
 
+	_waitForEvent(eventName, condition = null, timeout = null) {
+		// wait for the given event, or a cancelRunningOps event
+		// return when the condition is true
+		return new Promise((resolve, reject) => {
+			let finished = false;
+			let eventHandler, errorHandler;
+			let ctimeout = null;
+			if (timeout !== null) {
+				ctimeout = setTimeout(() => {
+					ctimeout = null;
+					if (finished) return;
+					this.removeListener(eventName, eventHandler);
+					this.removeListener('cancelRunningOps', errorHandler);
+					finished = true;
+					let err = new XError(XError.TIMED_OUT, 'Timed out waiting for event');
+					reject(err);
+				}, timeout);
+			}
+			eventHandler = (...args) => {
+				if (finished) return;
+				if (condition && !condition(...args)) return;
+				this.removeListener(eventName, eventHandler);
+				this.removeListener('cancelRunningOps', errorHandler);
+				if (ctimeout !== null) clearTimeout(ctimeout);
+				ctimeout = null;
+				finished = true;
+				resolve(args[0]);
+			};
+			errorHandler = (err) => {
+				if (finished) return;
+				this.removeListener(eventName, eventHandler);
+				this.removeListener('cancelRunningOps', errorHandler);
+				if (ctimeout !== null) clearTimeout(ctimeout);
+				ctimeout = null;
+				finished = true;
+				reject(err);
+			};
+			this.on(eventName, eventHandler);
+			this.on('cancelRunningOps', errorHandler);
+		});
+	}
+
 	initConnection(retry = true) {
 		this.debug('initConnection()');
 		if (this._initializing) {
@@ -767,7 +809,7 @@ class TinyGController extends Controller {
 				this.debug('resetOnConnect flag set; sending reset');
 				this.resetOnConnect = false;
 				this.serial.write('\x18\n');
-				await pasync.setTimeout(5000);
+				await pasync.setTimeout(3000);
 				this.debug('draining serial buffer');
 				this.serial.read(); // drain the serial buffer
 			}
@@ -841,6 +883,15 @@ class TinyGController extends Controller {
 				data: onSerialData
 			};
 			for (let eventName in this._serialListeners) this.serial.on(eventName, this._serialListeners[eventName]);
+
+			// Wait some time to receive a possible reset message and ignore it.  Depending on the platform being used,
+			// a reset message may or may not be automatically sent on connect.
+			this._expectingReset = true;
+			try {
+				await this._waitForEvent('resetMessageReceived', null, 1500);
+			} finally {
+				this._expectingReset = false;
+			}
 
 			// This handles the case that the app might have been killed with a partially sent serial buffer.  Send a newline
 			// to "flush" it, then wait a short period of time for any possible response to be received (and ignored).
@@ -1035,6 +1086,10 @@ class TinyGController extends Controller {
 		// Check if this is a SYSTEM READY response indicating a reset
 		if ('r' in data && data.r.msg === 'SYSTEM READY') {
 			this.debug('Got SYSTEM READY message');
+			this.emit('resetMessageReceived', data);
+			if (this._expectingReset) return;
+
+			// Handle unexpected reset
 			let err = new XError(XError.CANCELLED, 'Machine reset');
 			this.close(err);
 			if (!this._initializing) {
