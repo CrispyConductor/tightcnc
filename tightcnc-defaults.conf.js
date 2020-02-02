@@ -28,7 +28,10 @@ module.exports = {
 			// (with an error similar to "cannot get planner buffer").  If this is happening to you, try reducing this number.
 			// The possible negative side effect is that setting this number too low may cause stuttering with lots of fast
 			// moves.  Setting this to 4 is the equivalent of the tinyg "line mode" protocol.
-			maxUnackedRequests: 32
+			maxUnackedRequests: 32,
+
+			// A key-value mapping of settings to set on connection
+			initSettings: {}
 		},
 		grbl: {
 			// serial port settings

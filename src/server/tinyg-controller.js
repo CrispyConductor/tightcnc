@@ -1349,6 +1349,12 @@ class TinyGController extends Controller {
 		let srConfig = {};
 		for (let name of srVars) { srConfig[name] = true; }
 		await this.request({ sr: srConfig });
+		// Run any additional settings from the config
+		if (this.config.initSettings) {
+			for (let key in this.config.initSettings) {
+				await this.request({ [key]: this.config.initSettings[key] });
+			}
+		}
 		// Fetch initial state
 		await this._fetchStatus(null, false);
 		// Set the planner queue size to the number of free entries (it's currently empty)
